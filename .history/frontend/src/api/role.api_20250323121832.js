@@ -1,0 +1,26 @@
+import api from '../services/api.service';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+const BASE_URL = `${API_URL}/roles`;
+
+const roleApi = {
+  // Get all roles
+  getAll: () => api.get(BASE_URL),
+  
+  // Get a single role by ID
+  getById: (id) => api.get(`${BASE_URL}/${id}`),
+  
+  // Create a new role
+  create: (roleData) => api.post(BASE_URL, roleData),
+  
+  // Update a role
+  update: (id, roleData) => api.put(`${BASE_URL}/${id}`, roleData),
+  
+  // Delete a role
+  delete: (id) => api.delete(`${BASE_URL}/${id}`),
+  
+  // Get all system permissions
+  getAllPermissions: () => api.get(`${BASE_URL}/system/permissions`)
+};
+
+export default roleApi;
