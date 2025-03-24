@@ -3,13 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import userApi from '../api/user.api';
+import { useAuth } from '../contexts/AuthContext';
 
 const UsersPage = () => {
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  
+  const { hasPermission, isReady } = useAuth();
+  const { user } = useAuth();
+console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
+
   // Fetch users with pagination
   const { 
     data, 
@@ -18,8 +22,8 @@ const UsersPage = () => {
     error 
   } = useQuery({
     queryKey: ['users', page, limit],
-    queryFn: () => userApi.getAll(page, limit)
-
+    queryFn: () => userApi.getAll(page, limit),
+    enabled: isReady // Only fetch when auth is ready
   });
 
   console.log('DATA FROM API:', data);
@@ -58,8 +62,8 @@ const UsersPage = () => {
     navigate(`/users/edit/${userId}`);
   };
   
-  // If loading
-  if (isLoading) {
+  // If loading or auth not ready
+  if (!isReady || isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-lg">Loading users...</div>
@@ -83,12 +87,14 @@ const UsersPage = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Users</h1>
-          <button 
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-            onClick={handleAddUser}
-          >
-            Add New User
-          </button>
+          {hasPermission('users', 'create') && (
+            <button 
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+              onClick={handleAddUser}
+            >
+              Add New User
+            </button>
+          )}
         </div>
         
         <div className="bg-white shadow-md rounded p-6 text-center text-gray-500">
@@ -102,12 +108,14 @@ const UsersPage = () => {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Users</h1>
-        <button 
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          onClick={handleAddUser}
-        >
-          Add New User
-        </button>
+        {hasPermission('users', 'create') && (
+          <button 
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            onClick={handleAddUser}
+          >
+            Add New User
+          </button>
+        )}
       </div>
       
       {/* Users Table */}
@@ -153,18 +161,22 @@ const UsersPage = () => {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button 
-                    onClick={() => handleEditUser(user.id)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-4"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteUser(user.id, `${user.firstName} ${user.lastName}`)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
+                {hasPermission('users', 'update', 2) && (
+                    <button 
+                      onClick={() => handleEditUser(user.id)}
+                      className="text-indigo-600 hover:text-indigo-900 mr-4"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {hasPermission('users', 'delete', 2) && (
+                    <button 
+                      onClick={() => handleDeleteUser(user.id, `${user.firstName} ${user.lastName}`)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

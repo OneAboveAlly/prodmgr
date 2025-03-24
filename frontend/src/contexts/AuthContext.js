@@ -14,6 +14,8 @@ export function AuthProvider({ children }) {
     if (token) {
       try {
         const response = await authApi.me();
+        console.log('🔁 /auth/me response:', response.data);
+
         setUser(response.data);
       } catch (err) {
         console.warn('Token invalid or expired');
@@ -75,6 +77,8 @@ export function AuthProvider({ children }) {
   const refetchMe = async () => {
     try {
       const response = await authApi.me();
+      console.log('🔁 /auth/me response:', response.data);
+
       setUser(response.data);
     } catch (err) {
       console.warn('Failed to refresh user data', err);

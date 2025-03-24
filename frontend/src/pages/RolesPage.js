@@ -10,6 +10,8 @@ const RolesPage = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { hasPermission, isReady } = useAuth();
+  const { user } = useAuth();
+console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
 
   const {
     data,
@@ -103,10 +105,11 @@ const RolesPage = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button onClick={() => handleViewRole(role.id)} className="text-blue-600 hover:text-blue-900 mr-4">View</button>
-                  {hasPermission('roles', 'update') && (
+                  {hasPermission('roles', 'update', 2) && (
+
                     <button onClick={() => handleEditRole(role.id)} className="text-indigo-600 hover:text-indigo-900 mr-4">Edit</button>
                   )}
-                  {hasPermission('roles', 'delete') && (
+                  {hasPermission('roles', 'delete', 2) && (
                     <button
                       onClick={() => handleDeleteRole(role.id, role.name, role.userCount)}
                       className={`${role.userCount > 0 ? 'text-gray-400 cursor-not-allowed' : 'text-red-600 hover:text-red-900'}`}

@@ -70,16 +70,13 @@ const login = async (login, password) => {
   // Generuj tokeny - teraz tylko z userId
   const tokens = await generateTokens(user.id);
   
-  return {
-    user: {
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      login: user.login,
-      email: user.email
-    },
-    ...tokens
-  };
+  const fullUser = await getUserDetails(user.id);
+
+return {
+  user: fullUser,
+  ...tokens
+};
+
 };
 
 const logout = async (refreshToken) => {
