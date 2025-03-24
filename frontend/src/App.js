@@ -18,6 +18,7 @@ import RolesPage from './pages/RolesPage';
 import CreateRolePage from './pages/CreateRolePage';
 import EditRolePage from './pages/EditRolePage';
 import ViewRolePage from './pages/ViewRolePage';
+import UnauthorizedPage from './pages/UnauthorizedPage';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -37,6 +38,7 @@ function App() {
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/unauthorized" element={<UnauthorizedPage />} />
             
             {/* Protected routes - wrapped in MainLayout */}
             <Route
@@ -132,8 +134,21 @@ function App() {
             {/* Redirect root to dashboard */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             
-            {/* Redirect any unmatched routes to dashboard */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            {/* 404 - Page Not Found route */}
+            <Route
+              path="*"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <div className="p-10 text-center">
+                      <h1 className="text-4xl font-bold text-red-500 mb-4">404</h1>
+                      <p className="text-xl font-semibold">Page not found</p>
+                      <p className="mt-4 text-gray-600">The page you are looking for does not exist or has been moved.</p>
+                    </div>
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </BrowserRouter>
         

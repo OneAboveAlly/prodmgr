@@ -1,4 +1,3 @@
-// === FILE: contexts/AuthContext.js ===
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import authApi from '../api/auth.api';
 
@@ -8,27 +7,25 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isReady, setIsReady] = useState(false); // <-- NEW
+  const [isReady, setIsReady] = useState(false);
+
+  const initAuth = async () => {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      try {
+        const response = await authApi.me();
+        setUser(response.data);
+      } catch (err) {
+        console.warn('Token invalid or expired');
+        localStorage.removeItem('accessToken');
+        setUser(null);
+      }
+    }
+    setLoading(false);
+    setIsReady(true);
+  };
 
   useEffect(() => {
-    const initAuth = async () => {
-      const token = localStorage.getItem('accessToken');
-
-      if (token) {
-        try {
-          const response = await authApi.me();
-          setUser(response.data);
-        } catch (err) {
-          console.warn('Token invalid or expired');
-          localStorage.removeItem('accessToken');
-        }
-      }
-
-      setLoading(false);
-      setIsReady(true); // <-- Set once loaded
-      
-    };
-
     initAuth();
   }, []);
 
@@ -75,6 +72,15 @@ export function AuthProvider({ children }) {
     return user.permissions[key] >= level;
   };
 
+  const refetchMe = async () => {
+    try {
+      const response = await authApi.me();
+      setUser(response.data);
+    } catch (err) {
+      console.warn('Failed to refresh user data', err);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -85,7 +91,8 @@ export function AuthProvider({ children }) {
         logout,
         isAuthenticated: !!user,
         hasPermission,
-        isReady // <-- exportujemy gotowość
+        isReady,
+        refetchMe, // <--- eksportujemy refetch
       }}
     >
       {children}

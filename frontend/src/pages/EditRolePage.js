@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -10,7 +10,7 @@ const EditRolePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isReady, hasPermission } = useAuth(); // Używamy nowej flagi `isReady`
+  const { isReady, hasPermission, refetchMe } = useAuth();
 
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
@@ -29,10 +29,11 @@ const EditRolePage = () => {
 
   const updateRoleMutation = useMutation({
     mutationFn: (roleData) => roleApi.update(id, roleData),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Role updated successfully');
       queryClient.invalidateQueries({ queryKey: ['roles'] });
       queryClient.invalidateQueries({ queryKey: ['role', id] });
+      await refetchMe(); // ⬅️ tutaj odświeżamy dane użytkownika
       navigate('/roles');
     },
     onError: (error) => {
@@ -43,9 +44,10 @@ const EditRolePage = () => {
 
   const deleteRoleMutation = useMutation({
     mutationFn: () => roleApi.delete(id),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Role deleted successfully');
       queryClient.invalidateQueries({ queryKey: ['roles'] });
+      await refetchMe(); // Also refresh user data after deletion
       navigate('/roles');
     },
     onError: (error) => {
@@ -57,13 +59,17 @@ const EditRolePage = () => {
   const canEditRoles = hasPermission('roles', 'update');
   const canDeleteRoles = hasPermission('roles', 'delete');
 
-  // ⛔ NIE używamy warunków do hooków – dlatego wrzucamy check w useEffect
-  useEffect(() => {
-    if (isReady && !canEditRoles) {
-      toast.error('You do not have permission to edit roles');
-      navigate('/roles');
-    }
-  }, [isReady, canEditRoles, navigate]);
+  // 🔒 Block access immediately if no permission instead of using useEffect
+  if (isReady && !canEditRoles) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          <strong className="font-bold">Access Denied:</strong>
+          <span className="block"> You do not have permission to edit roles.</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!isReady || isLoading) return <div>Loading...</div>;
   if (isError) return <div>Error: {error.message}</div>;

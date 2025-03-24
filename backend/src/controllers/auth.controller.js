@@ -79,7 +79,8 @@ const me = async (req, res) => {
       return res.status(401).json({ message: 'Not authenticated' });
     }
     
-    const userDetails = await authService.getUserDetails(req.user.userId);
+    const userDetails = await authService.getUserDetails(req.user.id);
+
     
     res.json(userDetails);
   } catch (error) {

@@ -45,7 +45,7 @@ router.put(
 // Delete role - requires roles.delete permission
 router.delete(
   '/:id',
-  checkPermission('roles', 'delete', 2), // Higher permission level for deletion
+  checkPermission('roles', 'delete'), // Higher permission level for deletion
   roleController.deleteRole
 );
 

@@ -3,10 +3,19 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 const MainLayout = ({ children }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isReady, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Check if auth is ready before rendering the main layout
+  if (!isReady) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="text-gray-600 text-lg">Loading authentication...</div>
+      </div>
+    );
+  }
   
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
@@ -45,12 +54,10 @@ const MainLayout = ({ children }) => {
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
   };
   
-  // Simple permission check (to be expanded)
-  const hasPermission = (permission) => {
+  // Use the actual hasPermission function from AuthContext
+  const checkPermission = (permission) => {
     if (!permission) return true; // No permission required
-    // This is a placeholder for actual permission check
-    // You'd use the permission system defined in your auth context
-    return true; // For now, always return true
+    return hasPermission(permission.split('.')[0], permission.split('.')[1]);
   };
   
   return (
@@ -99,7 +106,7 @@ const MainLayout = ({ children }) => {
           <ul>
             {navLinks.map(
               (link) =>
-                hasPermission(link.permission) && (
+                checkPermission(link.permission) && (
                   <li key={link.path} className="mb-2">
                     <Link
                       to={link.path}

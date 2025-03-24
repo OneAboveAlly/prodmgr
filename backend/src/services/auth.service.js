@@ -5,25 +5,19 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-const generateTokens = async (userId, roles, permissions) => {
-  // Access token
+const generateTokens = async (userId) => {
   const accessToken = jwt.sign(
-    { userId, roles, permissions },
+    { userId }, // ⬅️ tylko userId, BEZ permissions
     process.env.JWT_SECRET,
     { expiresIn: '30m' }
   );
-  
-  // Refresh token
   const refreshToken = jwt.sign(
     { userId, tokenId: uuidv4() },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '14d' }
   );
-  
-  // Zapisz refresh token w bazie
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 14);
-  
   await prisma.refreshToken.create({
     data: {
       token: refreshToken,
@@ -31,7 +25,6 @@ const generateTokens = async (userId, roles, permissions) => {
       expiresAt
     }
   });
-  
   return { accessToken, refreshToken };
 };
 
@@ -68,18 +61,14 @@ const login = async (login, password) => {
     name: ur.role.name
   }));
   
-  
-  // Pobierz uprawnienia użytkownika
-  const permissions = await getUserPermissions(user.id);
-  
   // Aktualizuj ostatnie logowanie
   await prisma.user.update({
     where: { id: user.id },
     data: { lastLogin: new Date() }
   });
   
-  // Generuj tokeny
-  const tokens = await generateTokens(user.id, roles, permissions);
+  // Generuj tokeny - teraz tylko z userId
+  const tokens = await generateTokens(user.id);
   
   return {
     user: {
@@ -150,30 +139,8 @@ const refreshToken = async (token) => {
     data: { isRevoked: true }
   });
   
-  // Get user roles and permissions
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId: decoded.userId },
-    select: {
-      role: {
-        select: {
-          id: true,
-          name: true
-        }
-      }
-    }
-  });
-  
-  const roles = userRoles.map(ur => ({
-    id: ur.role.id,
-    name: ur.role.name
-  }));
-  
-  
-  // Pobierz uprawnienia użytkownika
-  const permissions = await getUserPermissions(decoded.userId);
-  
-  // Generate new tokens
-  const tokens = await generateTokens(decoded.userId, roles, permissions);
+  // Generate new tokens with only userId
+  const tokens = await generateTokens(decoded.userId);
   
   // Update user's last activity
   await prisma.user.update({
@@ -185,6 +152,10 @@ const refreshToken = async (token) => {
 };
 
 const getUserDetails = async (userId) => {
+  if (!userId) {
+    throw new Error('User ID is required for getUserDetails');
+  }
+  
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -228,27 +199,28 @@ const getUserDetails = async (userId) => {
 };
 
 const getUserPermissions = async (userId) => {
-  // Check if the user has the admin role
-  const isAdmin = await prisma.userRole.findFirst({
+  // Sprawdź czy ma jakąkolwiek rolę o nazwie 'Admin' lub 'Administrator'
+  const adminRole = await prisma.userRole.findFirst({
     where: {
       userId,
       role: {
-        name: 'Admin'
+        name: {
+          in: ['Admin', 'Administrator']
+        }
       }
     }
   });
 
-  if (isAdmin) {
-    // If the user is an admin, return all possible permissions
+  if (adminRole) {
     const allPermissions = await prisma.permission.findMany();
     const permissionMap = {};
     allPermissions.forEach(p => {
-      permissionMap[`${p.module}.${p.action}`] = 1; // Assuming 1 means full access
+      permissionMap[`${p.module}.${p.action}`] = 1;
     });
     return permissionMap;
   }
 
-  // Get all role-based permissions for user's roles
+  // Zwykłe role i uprawnienia
   const rolePermissions = await prisma.$queryRaw`
     SELECT p.module, p.action, MAX(rp.value) as value
     FROM "UserRole" ur
@@ -257,30 +229,24 @@ const getUserPermissions = async (userId) => {
     WHERE ur."userId" = ${userId}
     GROUP BY p.module, p.action
   `;
-  
-  // Get all individual permissions for the user
+
   const userPermissions = await prisma.$queryRaw`
     SELECT p.module, p.action, up.value
     FROM "UserPermission" up
     JOIN "Permission" p ON up."permissionId" = p.id
     WHERE up."userId" = ${userId}
   `;
-  
-  // Convert to object for easier access
+
   const permissionMap = {};
-  
-  // First add role permissions
   rolePermissions.forEach(p => {
     permissionMap[`${p.module}.${p.action}`] = p.value;
   });
-  
-  // Then override with user permissions
   userPermissions.forEach(p => {
     permissionMap[`${p.module}.${p.action}`] = p.value;
   });
-  
-  console.log('PERMISSIONS:', permissionMap);
+
   return permissionMap;
 };
 
-module.exports = { login, logout, refreshToken, getUserDetails, generateTokens };
+
+module.exports = { login, logout, refreshToken, getUserDetails, generateTokens, getUserPermissions };
