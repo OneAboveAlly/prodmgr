@@ -19,6 +19,7 @@ import CreateRolePage from './pages/CreateRolePage';
 import EditRolePage from './pages/EditRolePage';
 import ViewRolePage from './pages/ViewRolePage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
+import AuditLogsPage from './pages/AuditLogsPage';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -126,6 +127,18 @@ function App() {
                 <ProtectedRoute requiredPermission={['roles', 'view']}>
                   <MainLayout>
                     <ViewRolePage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            
+            {/* Audit Logs route */}
+            <Route
+              path="/audit-logs"
+              element={
+                <ProtectedRoute requiredPermission={['auditLogs', 'read']}>
+                  <MainLayout>
+                    <AuditLogsPage />
                   </MainLayout>
                 </ProtectedRoute>
               }

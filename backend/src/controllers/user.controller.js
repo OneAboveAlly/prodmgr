@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
+const { logAudit } = require('../utils/auditLogger');
 
 const prisma = new PrismaClient();
 
@@ -197,6 +198,19 @@ const createUser = async (req, res) => {
       return user;
     });
     
+    // Log the user creation action
+    await logAudit({ 
+      userId: req.user.id, 
+      action: 'create', 
+      module: 'users', 
+      targetId: newUser.id, 
+      meta: { 
+        email: newUser.email, 
+        login: newUser.login, 
+        roles: roles 
+      } 
+    });
+    
     res.status(201).json({
       id: newUser.id,
       firstName: newUser.firstName,
@@ -225,16 +239,33 @@ const updateUser = async (req, res) => {
       roles
     } = req.body;
     
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id }
+    // Check if user exists and get old data for audit log
+    const oldUserData = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        userRoles: {
+          include: {
+            role: true
+          }
+        }
+      }
     });
     
-    if (!existingUser) {
+    if (!oldUserData) {
       return res.status(404).json({ message: 'User not found' });
     }
     
-    // Update user data
+    // Format old data for audit log
+    const oldData = {
+      firstName: oldUserData.firstName,
+      lastName: oldUserData.lastName,
+      email: oldUserData.email,
+      phoneNumber: oldUserData.phoneNumber,
+      isActive: oldUserData.isActive,
+      roles: oldUserData.userRoles.map(ur => ur.role.id)
+    };
+    
+    // Update data
     const updateData = {
       firstName,
       lastName,
@@ -249,9 +280,9 @@ const updateUser = async (req, res) => {
     }
     
     // Update in a transaction
-    await prisma.$transaction(async (tx) => {
+    const updatedUser = await prisma.$transaction(async (tx) => {
       // Update user
-      await tx.user.update({
+      const user = await tx.user.update({
         where: { id },
         data: updateData
       });
@@ -275,6 +306,28 @@ const updateUser = async (req, res) => {
           });
         }
       }
+      
+      return user;
+    });
+    
+    // Log the user update action
+    await logAudit({ 
+      userId: req.user.id, 
+      action: 'update', 
+      module: 'users', 
+      targetId: id, 
+      meta: { 
+        previousData: oldData, 
+        updatedFields: { 
+          firstName, 
+          lastName, 
+          email, 
+          phoneNumber, 
+          isActive, 
+          password: password ? '******' : undefined, 
+          roles 
+        } 
+      } 
     });
     
     res.json({ message: 'User updated successfully' });
@@ -289,12 +342,19 @@ const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id }
+    // Check if user exists and get data for audit log
+    const userToDelete = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        userRoles: {
+          include: {
+            role: true
+          }
+        }
+      }
     });
     
-    if (!existingUser) {
+    if (!userToDelete) {
       return res.status(404).json({ message: 'User not found' });
     }
     
@@ -319,6 +379,19 @@ const deleteUser = async (req, res) => {
       await tx.user.delete({
         where: { id }
       });
+    });
+    
+    // Log the user deletion action
+    await logAudit({ 
+      userId: req.user.id, 
+      action: 'delete', 
+      module: 'users', 
+      targetId: id, 
+      meta: { 
+        email: userToDelete.email, 
+        login: userToDelete.login,
+        roles: userToDelete.userRoles.map(ur => ur.role.name)
+      } 
     });
     
     res.json({ message: 'User deleted successfully' });

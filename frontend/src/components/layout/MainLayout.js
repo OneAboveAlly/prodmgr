@@ -46,6 +46,12 @@ const MainLayout = ({ children }) => {
       icon: 'fas fa-user-tag',
       permission: 'roles.read' // Only users with this permission can see this
     },
+    {
+      name: 'Audit Logs',
+      path: '/audit-logs',
+      icon: 'fas fa-history',
+      permission: 'auditLogs.read' // Only users with this permission can see this
+    },
     // Add more navigation links here as your application grows
   ];
   

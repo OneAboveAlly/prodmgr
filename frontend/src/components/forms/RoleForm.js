@@ -15,7 +15,7 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
     formState: { errors, isDirty },
     reset,
     setValue,
-    watch,
+    //watch,
   } = useForm({
     defaultValues: {
       name: '',
@@ -24,7 +24,7 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
     },
   });
 
-  const watchedPermissions = watch('permissions');
+  //const watchedPermissions = watch('permissions');
 
   // Notify parent when form is dirty
   useEffect(() => {

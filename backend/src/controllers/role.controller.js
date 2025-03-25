@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const { logAudit } = require('../utils/auditLogger');
 const prisma = new PrismaClient();
 
 // Get all roles with pagination
@@ -57,6 +58,15 @@ const getAllRoles = async (req, res) => {
       }
     });
     
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'read',
+      module: 'roles',
+      targetId: null,
+      meta: { page, limit }
+    });
+    
     res.json({
       roles: formattedRoles,
       pagination: {
@@ -90,6 +100,15 @@ const getAllPermissions = async (req, res) => {
         groupedByModule[permission.module] = [];
       }
       groupedByModule[permission.module].push(permission);
+    });
+    
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'read',
+      module: 'permissions',
+      targetId: null,
+      meta: { count: permissions.length }
     });
     
     res.json({
@@ -135,6 +154,15 @@ const getRoleById = async (req, res) => {
       description: role.description,
       permissions,
     };
+    
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'read',
+      module: 'roles',
+      targetId: id,
+      meta: { name: role.name }
+    });
     
     res.json(formattedRole);
   } catch (error) {
@@ -197,6 +225,15 @@ const createRole = async (req, res) => {
       }
       
       return newRole;
+    });
+    
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'create',
+      module: 'roles',
+      targetId: role.id,
+      meta: { name, description }
     });
     
     res.status(201).json({
@@ -285,6 +322,20 @@ const updateRole = async (req, res) => {
       }
     });
     
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      module: 'roles',
+      targetId: id,
+      meta: { 
+        name, 
+        description,
+        previousName: existingRole.name,
+        previousDescription: existingRole.description
+      }
+    });
+    
     res.json({ message: 'Role updated successfully' });
   } catch (error) {
     console.error('Error updating role:', error);
@@ -328,6 +379,18 @@ const deleteRole = async (req, res) => {
       await tx.role.delete({
         where: { id }
       });
+    });
+    
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'delete',
+      module: 'roles',
+      targetId: id,
+      meta: { 
+        name: existingRole.name,
+        description: existingRole.description 
+      }
     });
     
     res.json({ message: 'Role deleted successfully' });

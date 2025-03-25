@@ -8,7 +8,7 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(!user);
   
-  const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset, /*setValue, watch*/ } = useForm({
     defaultValues: {
       firstName: '',
       lastName: '',
@@ -22,7 +22,7 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
   });
   
   // Watch selected role
-  const selectedRole = watch('role');
+  //const selectedRole = watch('role');
   
   // Fetch available roles
   const { data: rolesData, isLoading: rolesLoading, isError: rolesError } = useQuery({
