@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import PermissionDebugger from '../common/PermissionDebugger';
 
 const MainLayout = ({ children }) => {
   const { user, logout, isReady, hasPermission } = useAuth();
@@ -32,26 +33,41 @@ const MainLayout = ({ children }) => {
       name: 'Dashboard',
       path: '/dashboard',
       icon: 'fas fa-tachometer-alt',
-      permission: null // Everyone can see this
+      permission: null
     },
     {
       name: 'Users',
       path: '/users',
       icon: 'fas fa-users',
-      permission: 'users.read' // Only users with this permission can see this
+      permission: 'users.read'
     },
     {
       name: 'Roles',
       path: '/roles',
       icon: 'fas fa-user-tag',
-      permission: 'roles.read' // Only users with this permission can see this
+      permission: 'roles.read'
     },
     {
       name: 'Audit Logs',
       path: '/audit-logs',
       icon: 'fas fa-history',
-      permission: 'auditLogs.read' // Only users with this permission can see this
+      permission: 'auditLogs.read'
     },
+    
+    // Time tracking
+    {
+      name: 'Time Tracking',
+      path: '/time-tracking',
+      icon: 'fas fa-clock',
+      permission: 'timeTracking.read' // Only users with this permission can see this
+    },
+    // Leave management
+    {
+      name: 'Leave Management',
+      path: '/leave',
+      icon: 'fas fa-calendar-alt',
+      permission: 'leave.read' // Only users with this permission can see this
+    }
     // Add more navigation links here as your application grows
   ];
   
@@ -170,9 +186,15 @@ const MainLayout = ({ children }) => {
             {children}
           </div>
         </main>
+
+        {/* Permission Debugger */}
+        <PermissionDebugger />
+        
       </div>
     </div>
-  );
+  
+);
+  
 };
 
 export default MainLayout;

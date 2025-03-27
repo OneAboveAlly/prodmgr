@@ -78,6 +78,7 @@ const getUserById = async (req, res) => {
         login: true,
         email: true,
         phoneNumber: true,
+        birthDate: true,
         isActive: true,
         lastLogin: true,
         lastActivity: true,
@@ -145,6 +146,7 @@ const createUser = async (req, res) => {
       login, 
       email, 
       phoneNumber, 
+      birthDate,
       password,
       roles = [] 
     } = req.body;
@@ -178,6 +180,7 @@ const createUser = async (req, res) => {
           login,
           email,
           phoneNumber,
+          birthDate: birthDate ? new Date(birthDate) : null,
           passwordHash,
           isActive: true
         }
@@ -234,6 +237,7 @@ const updateUser = async (req, res) => {
       lastName,
       email,
       phoneNumber,
+      birthDate,
       isActive,
       password,
       roles
@@ -261,6 +265,7 @@ const updateUser = async (req, res) => {
       lastName: oldUserData.lastName,
       email: oldUserData.email,
       phoneNumber: oldUserData.phoneNumber,
+      birthDate: oldUserData.birthDate,
       isActive: oldUserData.isActive,
       roles: oldUserData.userRoles.map(ur => ur.role.id)
     };
@@ -271,6 +276,7 @@ const updateUser = async (req, res) => {
       lastName,
       email,
       phoneNumber,
+      birthDate: birthDate ? new Date(birthDate) : null,
       isActive
     };
     
@@ -323,6 +329,7 @@ const updateUser = async (req, res) => {
           lastName, 
           email, 
           phoneNumber, 
+          birthDate,
           isActive, 
           password: password ? '******' : undefined, 
           roles 

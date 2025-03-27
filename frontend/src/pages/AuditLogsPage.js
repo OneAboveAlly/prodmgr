@@ -7,7 +7,9 @@ import { saveAs } from 'file-saver';
 const fetchAuditLogs = async ({ queryKey }) => {
   const [, filters] = queryKey;
   const params = new URLSearchParams(filters);
+  // Fix the API endpoint path - make sure there's no duplicate '/api/'
   const res = await api.get(`/audit-logs?${params.toString()}`);
+
   return res.data;
 };
 

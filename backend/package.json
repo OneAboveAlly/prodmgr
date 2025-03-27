@@ -6,7 +6,8 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "create-admin": "node scripts/create-admin.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed-leave-types": "node scripts/seed-leave-types.js"
   },
   "keywords": [],
   "author": "",

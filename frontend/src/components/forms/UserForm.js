@@ -15,6 +15,7 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
       login: '',
       email: '',
       phoneNumber: '',
+      birthDate: '',
       password: '',
       isActive: true,
       role: '' // Changed from roles array to single role string
@@ -31,6 +32,15 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
     staleTime: 1000 * 60 * 5 // 5 minutes
   });
   
+  // Format date for input field (YYYY-MM-DD)
+  const formatDateForInput = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    return d instanceof Date && !isNaN(d) 
+      ? d.toISOString().split('T')[0]
+      : '';
+  };
+  
   // Update form when user data is available
   useEffect(() => {
     if (user) {
@@ -44,6 +54,7 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
         login: user.login || '',
         email: user.email || '',
         phoneNumber: user.phoneNumber || '',
+        birthDate: formatDateForInput(user.birthDate),
         isActive: user.isActive !== undefined ? user.isActive : true,
         role: roleId
       });
@@ -143,6 +154,15 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
           <input
             type="text"
             {...register('phoneNumber')}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Birth Date</label>
+          <input
+            type="date"
+            {...register('birthDate')}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           />
         </div>

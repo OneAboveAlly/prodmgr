@@ -46,6 +46,25 @@ const permissions = [
   { module: 'permissions', action: 'read', description: 'View permissions' },
   { module: 'permissions', action: 'assign', description: 'Assign permissions' },
   
+  // Time tracking permissions
+  { module: 'timeTracking', action: 'read', description: 'View time tracking' },
+  { module: 'timeTracking', action: 'create', description: 'Create time tracking sessions' },
+  { module: 'timeTracking', action: 'update', description: 'Update time tracking sessions' },
+  { module: 'timeTracking', action: 'delete', description: 'Delete time tracking sessions' },
+  { module: 'timeTracking', action: 'manageSettings', description: 'Manage time tracking settings' },
+  { module: 'timeTracking', action: 'viewReports', description: 'View time tracking reports' },
+  { module: 'timeTracking', action: 'exportReports', description: 'Export time tracking reports' },
+  { module: 'timeTracking', action: 'viewAll', description: 'View all users time tracking' },
+  
+  // Leave management permissions
+  { module: 'leave', action: 'read', description: 'View leave requests' },
+  { module: 'leave', action: 'create', description: 'Create leave requests' },
+  { module: 'leave', action: 'update', description: 'Update leave requests' },
+  { module: 'leave', action: 'delete', description: 'Delete leave requests' },
+  { module: 'leave', action: 'approve', description: 'Approve or reject leave requests' },
+  { module: 'leave', action: 'manageTypes', description: 'Manage leave types' },
+  { module: 'leave', action: 'viewAll', description: 'View all users leave requests' },
+  
   // To be extended with more modules as your application grows
 ];
 
@@ -62,7 +81,22 @@ const rolePermissions = {
     'roles.update': 3,
     'roles.delete': 3,
     'permissions.read': 3,
-    'permissions.assign': 3
+    'permissions.assign': 3,
+    'timeTracking.read': 3,
+    'timeTracking.create': 3,
+    'timeTracking.update': 3,
+    'timeTracking.delete': 3,
+    'timeTracking.manageSettings': 3,
+    'timeTracking.viewReports': 3,
+    'timeTracking.exportReports': 3,
+    'timeTracking.viewAll': 3,
+    'leave.read': 3,
+    'leave.create': 3,
+    'leave.update': 3,
+    'leave.delete': 3,
+    'leave.approve': 3,
+    'leave.manageTypes': 3,
+    'leave.viewAll': 3
   },
   'Manager': {
     // Manager has most permissions with medium value
@@ -75,7 +109,22 @@ const rolePermissions = {
     'roles.update': 0,
     'roles.delete': 0,
     'permissions.read': 2,
-    'permissions.assign': 0
+    'permissions.assign': 0,
+    'timeTracking.read': 2,
+    'timeTracking.create': 2,
+    'timeTracking.update': 2,
+    'timeTracking.delete': 0,
+    'timeTracking.manageSettings': 1,
+    'timeTracking.viewReports': 2,
+    'timeTracking.exportReports': 2,
+    'timeTracking.viewAll': 2,
+    'leave.read': 2,
+    'leave.create': 2,
+    'leave.update': 2,
+    'leave.delete': 0,
+    'leave.approve': 2,
+    'leave.manageTypes': 0,
+    'leave.viewAll': 2
   },
   'User': {
     // Regular user has limited permissions
@@ -88,7 +137,22 @@ const rolePermissions = {
     'roles.update': 0,
     'roles.delete': 0,
     'permissions.read': 0,
-    'permissions.assign': 0
+    'permissions.assign': 0,
+    'timeTracking.read': 1,
+    'timeTracking.create': 1,
+    'timeTracking.update': 1,
+    'timeTracking.delete': 0,
+    'timeTracking.manageSettings': 0,
+    'timeTracking.viewReports': 1,
+    'timeTracking.exportReports': 0,
+    'timeTracking.viewAll': 0,
+    'leave.read': 1,
+    'leave.create': 1,
+    'leave.update': 1,
+    'leave.delete': 0,
+    'leave.approve': 0,
+    'leave.manageTypes': 0,
+    'leave.viewAll': 0
   }
 };
 

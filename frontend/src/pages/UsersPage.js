@@ -28,6 +28,10 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
 
   console.log('DATA FROM API:', data);
   
+  // Ekstrakcja listy użytkowników i informacji o paginacji
+  const users = data?.users || [];
+  const pagination = data?.pagination;
+  
   // Delete user mutation
   const deleteUserMutation = useMutation({
     mutationFn: (userId) => userApi.delete(userId),
@@ -82,7 +86,7 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
   }
 
   // If no data or empty array
-  if (!data || !Array.isArray(data.users) || data.users.length === 0) {
+  if (!users || users.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
@@ -132,7 +136,7 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-          {Array.isArray(data?.users) && data.users.map(user => (
+          {Array.isArray(users) && users.map(user => (
               <tr key={user.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900">{user.firstName} {user.lastName}</div>
@@ -181,7 +185,7 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
               </tr>
             ))}
             
-            {data?.users.length === 0 && (
+            {users.length === 0 && (
               <tr>
                 <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">
                   No users found
@@ -193,10 +197,10 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
       </div>
       
       {/* Pagination */}
-      {data?.pagination && data.pagination.pages > 1 && (
+      {pagination && pagination.pages > 1 && (
         <div className="flex justify-between items-center mt-6">
           <div className="text-sm text-gray-500">
-            Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, data.pagination.total)} of {data.pagination.total} users
+            Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, pagination.total)} of {pagination.total} users
           </div>
           <div className="flex space-x-2">
             <button
@@ -211,7 +215,7 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
               Previous
             </button>
             
-            {[...Array(data.pagination.pages).keys()].map(i => (
+            {[...Array(pagination.pages).keys()].map(i => (
               <button
                 key={i}
                 onClick={() => handlePageChange(i + 1)}
@@ -227,9 +231,9 @@ console.log('🧠 ZALOGOWANY UŻYTKOWNIK:', user);
             
             <button
               onClick={() => handlePageChange(page + 1)}
-              disabled={page === data.pagination.pages}
+              disabled={page === pagination.pages}
               className={`px-3 py-1 rounded ${
-                page === data.pagination.pages 
+                page === pagination.pages 
                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}

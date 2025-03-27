@@ -27,6 +27,12 @@ app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/roles', require('./routes/role.routes'));
 app.use('/api/audit-logs', require('./routes/audit.route'));
 
+
+// Time tracking routes
+app.use('/api/time-tracking', require('./routes/timeTracking.routes'));
+
+// Leave management routes
+app.use('/api/leave', require('./routes/leave.routes'));
 // Pozostałe routes będą dodane później
 
 // Obsługa błędów

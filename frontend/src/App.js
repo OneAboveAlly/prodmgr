@@ -20,6 +20,14 @@ import EditRolePage from './pages/EditRolePage';
 import ViewRolePage from './pages/ViewRolePage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import AuditLogsPage from './pages/AuditLogsPage';
+import LeaveTypesPage from './pages/LeaveTypesPage';
+
+// Add these route imports to the frontend/src/App.js file
+import TimeTrackingPage from './pages/TimeTrackingPage';
+import TimeTrackingSettingsPage from './pages/TimeTrackingSettingsPage';
+import TimeTrackingReportsPage from './pages/TimeTrackingReportsPage';
+import LeavePage from './pages/LeavePage';
+import ActiveUsersPage from './pages/ActiveUsersPage';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -144,6 +152,72 @@ function App() {
               }
             />
             
+
+            
+            {/* Time Tracking routes */}
+            <Route
+              path="/time-tracking"
+              element={
+                <ProtectedRoute requiredPermission={['timeTracking', 'read']}>
+                  <MainLayout>
+                    <TimeTrackingPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/time-tracking/settings"
+              element={
+                <ProtectedRoute requiredPermission={['timeTracking', 'manageSettings']}>
+                  <MainLayout>
+                    <TimeTrackingSettingsPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/time-tracking/reports"
+              element={
+                <ProtectedRoute requiredPermission={['timeTracking', 'viewReports']}>
+                  <MainLayout>
+                    <TimeTrackingReportsPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/time-tracking/users-activity"
+              element={
+                <ProtectedRoute requiredPermission={['timeTracking', 'viewAll']}>
+                  <MainLayout>
+                    <ActiveUsersPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            {/* Leave Management routes */}
+            <Route
+              path="/leave"
+              element={
+                <ProtectedRoute requiredPermission={['leave', 'read']}>
+                  <MainLayout>
+                    <LeavePage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/leave/types"
+              element={
+                <ProtectedRoute requiredPermission={['leave', 'manageTypes']}>
+                  <MainLayout>
+                    <LeaveTypesPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+
             {/* Redirect root to dashboard */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             

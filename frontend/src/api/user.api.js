@@ -7,11 +7,7 @@ const userApi = {
   // Get all users with pagination
   getAll: async (page = 1, limit = 10) => {
     const response = await api.get(`${BASE_URL}?page=${page}&limit=${limit}`);
-    // Normalize response to always return users and pagination
-    if (response.data?.users) {
-      return response.data;
-    }
-    return { users: [], pagination: { total: 0, page, limit, pages: 0 } };
+    return response.data; // zawiera users i pagination
   },
   
   // Get a single user by ID
