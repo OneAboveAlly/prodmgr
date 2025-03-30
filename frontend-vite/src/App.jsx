@@ -5,6 +5,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 import { AuthProvider } from './contexts/AuthContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
 
@@ -22,6 +23,8 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import LeaveTypesPage from './pages/LeaveTypesPage';
 import NotificationList from './modules/notifications/components/NotificationList';
+import SendNotificationPage from './pages/SendNotificationPage';
+import MessagesPage from './modules/chat/pages/MessagesPage';
 
 
 // Add these route imports to the frontend/src/App.js file
@@ -30,6 +33,7 @@ import TimeTrackingSettingsPage from './pages/TimeTrackingSettingsPage';
 import TimeTrackingReportsPage from './pages/TimeTrackingReportsPage';
 import LeavePage from './pages/LeavePage';
 import ActiveUsersPage from './pages/ActiveUsersPage';
+
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -45,7 +49,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
+        <NotificationProvider>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
@@ -141,7 +145,29 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            
+            <Route
+              path="/notifications/send"
+              element={
+                <ProtectedRoute requiredPermission={['notifications', 'send']}>
+                  <MainLayout>
+                    <SendNotificationPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Messages route */}
+            <Route
+              path="/messages"
+              element={
+                <ProtectedRoute requiredPermission={['chat', 'view']}>
+                  <MainLayout>
+                    <MessagesPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+
             {/* Audit Logs route */}
             <Route
               path="/audit-logs"
@@ -154,16 +180,26 @@ function App() {
               }
             />
             <Route
-  path="/notifications"
-  element={
-    <ProtectedRoute>
-      <MainLayout>
-        <NotificationList />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <NotificationList />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route 
+              path="/notifications/send" 
+              element={
+                <ProtectedRoute requiredPermission={['notifications', 'create']}>
+                  <MainLayout>
+                    <SendNotificationPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
 
             
             {/* Time Tracking routes */}
@@ -249,10 +285,10 @@ function App() {
               }
             />
           </Routes>
-        </BrowserRouter>
-        
-        {/* Toast notifications */}
-        <ToastContainer position="top-right" autoClose={3000} />
+          
+          {/* Toast notifications */}
+          <ToastContainer position="top-right" autoClose={3000} />
+        </NotificationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import PermissionDebugger from '../common/PermissionDebugger';
 import useSocketNotifications from '@/modules/notifications/hooks/useSocketNotifications';
 import NotificationBadge from '../NotificationBadge'; // Import the NotificationBadge component
+import { MessageCircle } from 'lucide-react'; // Import MessageCircle icon from lucide-react
 
 
 const MainLayout = ({ children }) => {
@@ -59,6 +60,13 @@ const MainLayout = ({ children }) => {
       icon: 'fas fa-bell',
       permission: 'notifications.read' // lub np. 'notifications.read' jeśli chcesz dodać kontrolę
     },
+    {
+      name: 'Send Notification',
+      path: '/notifications/send',
+      icon: 'fas fa-paper-plane',
+      permission: 'notifications.send'
+    },
+    
     {
       name: 'Audit Logs',
       path: '/audit-logs',
@@ -174,7 +182,13 @@ const MainLayout = ({ children }) => {
               
               {/* User menu */}
               <div className="flex items-center">
-                {/* NotificationBadge added here */}
+                {/* Message icon added here */}
+                <div className="mr-4">
+                  <Link to="/messages">
+                    <MessageCircle className="w-6 h-6 text-gray-700 hover:text-indigo-600 transition" />
+                  </Link>
+                </div>
+                {/* NotificationBadge */}
                 <div className="mr-4">
                   <NotificationBadge />
                 </div>

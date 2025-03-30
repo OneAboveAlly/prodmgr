@@ -63,7 +63,19 @@ const refresh = async (req, res) => {
       sameSite: 'lax',             // 🟢 pozwala na POST z ciasteczkiem
       maxAge: 14 * 24 * 60 * 60 * 1000
     });
-    
+    // Dodaj powiadomienie do bazy
+const notification = await prisma.notification.create({
+  data: {
+    userId: result.user.id,
+    content: `Witaj ponownie, ${result.user.firstName}! 👋`,
+    link: '/dashboard',
+  }
+});
+
+// Wyślij socketem
+const io = req.app.get('io');
+io.to(result.user.id.toString()).emit(`notification:${result.user.id}`, notification);
+
     res.json({
       accessToken: result.accessToken
     });

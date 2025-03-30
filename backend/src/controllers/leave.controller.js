@@ -1,6 +1,7 @@
 // backend/src/controllers/leave.controller.js
 const { PrismaClient } = require('@prisma/client');
 const { logAudit } = require('../utils/auditLogger');
+const { notifyLeaveRequest } = require('../utils/notificationUtils');
 
 const prisma = new PrismaClient();
 
@@ -216,6 +217,20 @@ const requestLeave = async (req, res) => {
       }
     });
     
+    const fullLeave = await prisma.leave.findUnique({
+      where: { id: leave.id },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+    
+    await notifyLeaveRequest(req.app.get('io'), prisma, fullLeave);
+    
     res.status(201).json(leave);
   } catch (error) {
     console.error('Error requesting leave:', error);
@@ -332,6 +347,25 @@ const approveRejectLeave = async (req, res) => {
         notes: notes ? `${leave.notes || ''}\n\nManager note: ${notes}` : leave.notes
       }
     });
+    
+    // Add notification for the leave request owner
+    const content = `📝 Twój wniosek urlopowy został ${status === 'approved' ? 'zatwierdzony ✅' : 'odrzucony ❌'}`;
+    const link = '/leave';
+    const notification = await prisma.notification.create({
+      data: {
+        userId: leave.userId,
+        content,
+        link,
+        type: 'SYSTEM'
+      }
+    });
+    
+    // Wyślij pełny obiekt powiadomienia do konkretnego użytkownika
+    req.app.get('io')
+      .to(`user:${leave.userId}`)
+      .emit(`notification:${leave.userId}`, notification);
+    
+    
     
     await logAudit({
       userId: req.user.id,
