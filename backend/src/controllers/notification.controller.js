@@ -5,12 +5,63 @@ exports.getUserNotifications = async (req, res) => {
   const userId = req.user.id;
 
   const notifications = await prisma.notification.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
+    where: {
+      userId,
+      archived: false, // ✅ pokazuj tylko aktywne
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
   });
 
   res.json({ notifications });
 };
+
+// ✅ nowy endpoint - pełna historia
+exports.getAllUserNotifications = async (req, res) => {
+  const userId = req.user.id;
+
+  const notifications = await prisma.notification.findMany({
+    where: {
+      userId
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  res.json({ notifications });
+};
+
+const getNotificationHistory = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ message: 'Błąd historii powiadomień' });
+  }
+};
+
+
+exports.archiveAllNotifications = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await prisma.notification.updateMany({
+      where: { userId, archived: false },
+      data: { archived: true }
+    });
+
+    res.json({ message: 'Wszystkie powiadomienia zarchiwizowane' });
+  } catch (error) {
+    console.error('❌ Błąd archiwizacji:', error);
+    res.status(500).json({ message: 'Błąd archiwizacji' });
+  }
+};
+
+
 
 exports.markAsRead = async (req, res) => {
   const notificationId = req.params.id;
@@ -104,4 +155,47 @@ exports.testNotification = async (req, res) => {
   io.emit(`notification:${userId}`, newNotification);
 
   res.json(newNotification);
+};
+
+exports.archiveAll = async (req, res) => {
+  const userId = req.params.userId;
+
+  await prisma.notification.updateMany({
+    where: { userId },
+    data: { archived: true }
+  });
+
+  res.json({ message: 'Notifications archived' });
+};
+
+// ✅ Pełna historia – wszystko (przeczytane i zarchiwizowane)
+exports.getNotificationHistory = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ message: 'Błąd historii powiadomień' });
+  }
+};
+
+// ✅ Archiwizuj pojedyncze powiadomienie (do przycisku "Archiwizuj")
+exports.archiveSingle = async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const updated = await prisma.notification.update({
+      where: { id },
+      data: { archived: true }
+    });
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: 'Błąd archiwizacji powiadomienia' });
+  }
 };

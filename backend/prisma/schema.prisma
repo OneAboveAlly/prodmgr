@@ -199,8 +199,10 @@ model Notification {
   content       String
   link          String
   isRead        Boolean  @default(false)
+  isArchived Boolean @default(false)
   userId        String
   type          NotificationType @default(SYSTEM)
+  archived   Boolean  @default(false)
   createdAt     DateTime @default(now())
 
   user          User     @relation(fields: [userId], references: [id])

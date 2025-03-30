@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { socket } from '../socket';
 import { useAuth } from './AuthContext';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
 
 const NotificationContext = createContext();
 
@@ -9,6 +10,7 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (user?.id) {
@@ -19,9 +21,14 @@ export const NotificationProvider = ({ children }) => {
   useEffect(() => {
     if (user?.id) {
       socket.on(`notification:${user.id}`, (notification) => {
+        if (notification.archived) return; // 👈 zapobiegnij wyświetlaniu zarchiwizowanych
+        
         setNotifications((prev) => [notification, ...prev]);
         setUnreadCount((prev) => prev + 1);
         toast.info(notification.content);
+
+        // ✅ Dodaj do cache React Query (żeby /notifications też je widziało)
+        queryClient.setQueryData(['notifications'], (old = []) => [notification, ...old]);
       });
     }
 
@@ -32,7 +39,6 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [user]);
 
-  // 🔧 Dodajemy tę metodę do lokalnej aktualizacji
   const markNotificationAsRead = (id) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
@@ -47,7 +53,7 @@ export const NotificationProvider = ({ children }) => {
         unreadCount,
         setNotifications,
         setUnreadCount,
-        markNotificationAsRead // 🟢 eksponujemy w kontekście
+        markNotificationAsRead,
       }}
     >
       {children}

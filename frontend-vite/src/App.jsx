@@ -25,6 +25,7 @@ import LeaveTypesPage from './pages/LeaveTypesPage';
 import NotificationList from './modules/notifications/components/NotificationList';
 import SendNotificationPage from './pages/SendNotificationPage';
 import MessagesPage from './modules/chat/pages/MessagesPage';
+import NotificationListPage from './pages/NotificationListPage';
 
 
 // Add these route imports to the frontend/src/App.js file
@@ -190,6 +191,17 @@ function App() {
               }
             />
             
+            <Route
+  path="/notifications/history"
+  element={
+    <ProtectedRoute>
+      <MainLayout>
+        <NotificationListPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
             <Route 
               path="/notifications/send" 
               element={
