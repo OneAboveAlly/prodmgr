@@ -45,7 +45,6 @@ const getNotificationHistory = async (req, res) => {
   }
 };
 
-
 exports.archiveAllNotifications = async (req, res) => {
   const { userId } = req.params;
   try {
@@ -60,8 +59,6 @@ exports.archiveAllNotifications = async (req, res) => {
     res.status(500).json({ message: 'Błąd archiwizacji' });
   }
 };
-
-
 
 exports.markAsRead = async (req, res) => {
   const notificationId = req.params.id;
@@ -83,7 +80,6 @@ exports.markAsRead = async (req, res) => {
   }
 };
 
-
 exports.createNotification = async (req, res) => {
   const { userId, content, link, type = 'SYSTEM' } = req.body;
 
@@ -93,6 +89,7 @@ exports.createNotification = async (req, res) => {
       content,
       link,
       type,
+      createdById: req.user.id, // 🧠 DODANO
     },
   });
 
@@ -116,6 +113,7 @@ exports.sendManualNotification = async (req, res) => {
         content,
         link,
         type: 'SYSTEM',
+        createdById: req.user.id, // 🧠 DODANO
       },
     });
 
@@ -149,6 +147,7 @@ exports.testNotification = async (req, res) => {
       content: '🔔 To jest testowe powiadomienie',
       link: '/dashboard',
       type: 'SYSTEM',
+      createdById: req.user.id, // 🧠 DODANO
     },
   });
 
@@ -197,5 +196,172 @@ exports.archiveSingle = async (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: 'Błąd archiwizacji powiadomienia' });
+  }
+};
+
+// 🔥 Nowa funkcja do zaplanowania powiadomienia
+exports.scheduleNotification = async (req, res) => {
+  const { userIds, content, link, type = 'SYSTEM', scheduledAt, sendNow } = req.body;
+  const io = req.app.get('io');
+
+  if (!userIds || !content || !link) {
+    return res.status(400).json({ message: 'Brakuje wymaganych danych' });
+  }
+
+  try {
+    const now = new Date();
+    const scheduledDate = scheduledAt ? new Date(scheduledAt) : null;
+    const immediate = sendNow || !scheduledDate || scheduledDate <= now;
+
+    const created = await Promise.all(
+      userIds.map(async (userId) => {
+        const n = await prisma.notification.create({
+          data: {
+            userId,
+            content,
+            link,
+            type,
+            scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+            isSent: immediate,
+            createdById: req.user.id
+          },
+        });
+
+        if (immediate) {
+          io.emit(`notification:${userId}`, n); // <== DZWONECZEK 🔔
+        }
+
+        return n;
+      })
+    );
+
+    res.status(201).json({ notifications: created });
+  } catch (err) {
+    console.error('❌ Błąd przy zapisie powiadomień:', err);
+    res.status(500).json({ message: 'Błąd zapisu' });
+  }
+};
+
+// 🔁 Cron - wysyłka zaplanowanych powiadomień
+exports.dispatchScheduledNotifications = async (io) => {
+  const now = new Date();
+  const pending = await prisma.notification.findMany({
+    where: {
+      scheduledAt: {
+        lte: now,
+      },
+      isSent: false,
+    },
+  });
+  for (const n of pending) {
+    io.emit(`notification:${n.userId}`, n);
+    await prisma.notification.update({
+      where: { id: n.id },
+      data: { isSent: true },
+    });
+  }
+};
+
+exports.getScheduledNotifications = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const now = new Date();
+
+    const scheduled = await prisma.notification.findMany({
+      where: {
+        createdById: userId, // 🔐 tylko powiadomienia które ja utworzyłem
+        isSent: false,
+        scheduledAt: {
+          gt: now,
+        },
+      },
+      orderBy: {
+        scheduledAt: 'asc',
+      },
+    });
+
+    res.json({ notifications: scheduled });
+  } catch (err) {
+    console.error('❌ Błąd pobierania zaplanowanych:', err);
+    res.status(500).json({ message: 'Błąd zaplanowanych powiadomień' });
+  }
+};
+
+exports.getNotificationById = async (req, res) => {
+  const { id } = req.params;
+
+  console.log('📥 [GET] Notification ID:', id);
+  console.log('👤 req.user.id:', req.user.id);
+
+  const notif = await prisma.notification.findFirst({ 
+    where: { 
+      id, 
+      createdById: req.user.id // tylko jeśli user sam ją stworzył
+    } 
+  });
+
+  if (!notif) {
+    console.warn('❌ Notification not found or not owned by user');
+    return res.status(404).json({ message: 'Nie znaleziono' });
+  }
+
+  res.json(notif);
+};
+
+
+
+exports.deleteNotification = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const notif = await prisma.notification.findFirst({ 
+      where: { 
+        id, 
+        createdById: req.user.id // 🔐 Autoryzacja 
+      } 
+    });
+    
+    if (!notif) {
+      return res.status(404).json({ message: 'Nie znaleziono lub brak dostępu' });
+    }
+    
+    await prisma.notification.delete({ where: { id } });
+    res.json({ message: 'Usunięto pomyślnie' });
+  } catch (error) {
+    console.error('❌ Błąd usuwania powiadomienia:', error);
+    res.status(500).json({ message: 'Błąd podczas usuwania powiadomienia' });
+  }
+};
+
+exports.updateNotification = async (req, res) => {
+  const { id } = req.params;
+  const { content, link, userIds, scheduledAt } = req.body;
+  
+  try {
+    const notif = await prisma.notification.findFirst({ 
+      where: { 
+        id, 
+        createdById: req.user.id // 🔐 Tylko jeśli jesteś autorem 
+      } 
+    });
+    
+    if (!notif) {
+      return res.status(404).json({ message: 'Nie znaleziono lub brak dostępu' });
+    }
+    
+    const updated = await prisma.notification.update({
+      where: { id },
+      data: {
+        content,
+        link,
+        scheduledAt: new Date(scheduledAt),
+      },
+    });
+    
+    res.json(updated);
+  } catch (err) {
+    console.error('❌ Błąd aktualizacji:', err);
+    res.status(500).json({ message: 'Błąd aktualizacji' });
   }
 };

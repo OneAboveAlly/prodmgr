@@ -43,3 +43,19 @@ export const useMarkAsRead = () => {
     },
   });
 };
+
+
+//Hook Scheduled
+export const useScheduledNotifications = () => {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['notifications', 'scheduled'],
+    queryFn: async () => {
+      const res = await api.get('/notifications/scheduled');
+      return res.data.notifications || [];
+    },
+    enabled: !!user,
+    staleTime: 0,
+  });
+};

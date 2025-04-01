@@ -24,12 +24,15 @@ const NotificationListPage = () => {
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">📥 Skrzynka powiadomień (Historia)</h1>
-        <Link
-          to="/notifications"
-          className="text-sm text-indigo-600 hover:underline"
-        >
-          ← Powrót do aktywnych
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/notifications"
+            className="text-sm text-indigo-600 hover:underline"
+          >
+            ← Powrót do aktywnych
+          </Link>
+          
+        </div>
       </div>
 
       {data?.length === 0 && <p className="text-gray-500">Brak powiadomień</p>}

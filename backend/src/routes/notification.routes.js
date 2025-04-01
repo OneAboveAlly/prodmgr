@@ -11,8 +11,17 @@ router.patch('/:id/read', notificationController.markAsRead);
 router.patch('/:id/archive', notificationController.archiveSingle);
 router.patch('/mark-all-read/:userId', notificationController.markAllAsRead);
 router.patch('/archive-all/:userId', notificationController.archiveAllNotifications);
+
 router.get('/history', notificationController.getNotificationHistory);
+router.get('/scheduled', notificationController.getScheduledNotifications);
+
 router.post('/send', notificationController.sendManualNotification);
 router.post('/test/:userId', notificationController.testNotification);
+router.post('/schedule', notificationController.scheduleNotification);
+
+// 🔥 Na końcu — dynamiczne trasy
+router.get('/:id', notificationController.getNotificationById);
+router.put('/:id', notificationController.updateNotification);
+router.delete('/:id', notificationController.deleteNotification);
 
 module.exports = router;

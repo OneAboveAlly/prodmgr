@@ -16,10 +16,16 @@ export function AuthProvider({ children }) {
         const response = await authApi.me();
         console.log('🔁 /auth/me response:', response.data);
 
+        // Zapisz ID użytkownika do localStorage dla Socket.io
+        if (response.data && response.data.id) {
+          localStorage.setItem('userId', response.data.id);
+        }
+
         setUser(response.data);
       } catch (err) {
         console.warn('Token invalid or expired');
         localStorage.removeItem('accessToken');
+        localStorage.removeItem('userId');
         setUser(null);
       }
     }
@@ -40,6 +46,12 @@ export function AuthProvider({ children }) {
   
       // ⬇️ Pobierz pełne info o użytkowniku po zalogowaniu
       const meResponse = await authApi.me();
+      
+      // Zapisz ID użytkownika do localStorage dla Socket.io
+      if (meResponse.data && meResponse.data.id) {
+        localStorage.setItem('userId', meResponse.data.id);
+      }
+      
       setUser(meResponse.data);
   
       return meResponse.data;
@@ -59,6 +71,7 @@ export function AuthProvider({ children }) {
       console.error('Logout error:', err);
     } finally {
       localStorage.removeItem('accessToken');
+      localStorage.removeItem('userId'); // Usuń userId przy wylogowaniu
       setUser(null);
     }
   };
@@ -79,6 +92,11 @@ export function AuthProvider({ children }) {
       const response = await authApi.me();
       console.log('🔁 /auth/me response:', response.data);
 
+      // Aktualizacja userId jeśli zmieniły się dane użytkownika
+      if (response.data && response.data.id) {
+        localStorage.setItem('userId', response.data.id);
+      }
+
       setUser(response.data);
     } catch (err) {
       console.warn('Failed to refresh user data', err);
@@ -96,7 +114,7 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!user,
         hasPermission,
         isReady,
-        refetchMe, // <--- eksportujemy refetch
+        refetchMe,
       }}
     >
       {children}

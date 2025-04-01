@@ -19,6 +19,7 @@ const checkAuth = async (req, res, next) => {
     
     // The token now only contains userId
     const userId = decoded.userId;
+
     
     // Check if user exists and is active
     const user = await prisma.user.findUnique({
@@ -51,9 +52,9 @@ const checkAuth = async (req, res, next) => {
     const permissions = await getUserPermissions(userId);
     
     // Attach user info to request
-    req.user = {
-      userId: user.id,
+    req.user = {   
       id: user.id,
+      
       roles: user.userRoles.map(ur => ({
         id: ur.role.id,
         name: ur.role.name

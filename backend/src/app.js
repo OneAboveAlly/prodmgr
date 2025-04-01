@@ -5,6 +5,10 @@ const path = require('path');
 const cookieParser = require('cookie-parser');
 const http = require('http');
 const { Server } = require('socket.io');
+const { startScheduler } = require('./scheduler');
+const { setupChatSocket } = require('./sockets/chat.socket');
+
+
 
 dotenv.config();
 
@@ -21,18 +25,10 @@ const io = new Server(server, {
 app.set('io', io);
 
 // Socket.IO – pojedyncza obsługa
-io.on('connection', (socket) => {
-  console.log('✅ Socket connected:', socket.id);
+setupChatSocket(io);
 
-  socket.on('register', (userId) => {
-    socket.join(`user:${userId}`);
-    console.log(`📨 Socket ${socket.id} dołączył do user:${userId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('❌ Socket disconnected:', socket.id);
-  });
-});
+// Start the scheduler with io instance
+startScheduler(io);
 
 // Middlewares
 app.use(cors({
@@ -56,6 +52,8 @@ app.use('/api/chat', require('./routes/chat.routes'));
 app.use('/api/time-tracking', require('./routes/timeTracking.routes'));
 app.use('/api/leave', require('./routes/leave.routes'));
 app.use('/api/messages', require('./routes/message.routes')); // ✅ Wiadomości
+app.use('/api/production', require('./routes/production.routes'));
+app.use('/api/inventory', require('./routes/inventory.routes'));
 
 // Globalny error handler
 app.use((err, req, res, next) => {

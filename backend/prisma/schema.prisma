@@ -26,12 +26,20 @@ model User {
   userPermissions UserPermission[]
   refreshTokens   RefreshToken[]
 
-  auditLogs    AuditLog[]    @relation("UserAuditLogs")
-  workSessions WorkSession[] @relation("UserWorkSessions")
-  leaves       Leave[]       @relation("UserLeaves")
-  notifications     Notification[]
-  sentMessages      Message[] @relation("senderMessages")
-  receivedMessages  Message[] @relation("receiverMessages")
+  auditLogs        AuditLog[]     @relation("UserAuditLogs")
+  workSessions     WorkSession[]  @relation("UserWorkSessions")
+  leaves           Leave[]        @relation("UserLeaves")
+  notifications    Notification[]
+  sentMessages     Message[]      @relation("senderMessages")
+  receivedMessages Message[]      @relation("receiverMessages")
+
+  createdGuides         ProductionGuide[]      @relation("CreatedGuides")
+  stepComments          StepComment[]
+  commentRecipients     CommentRecipient[]
+  stepWorkSessions      StepWorkSession[]
+  inventoryTransactions InventoryTransaction[]
+  createdInventoryItems InventoryItem[]        @relation("CreatedInventoryItems")
+  Attachment            Attachment[]
 }
 
 model Role {
@@ -195,17 +203,20 @@ model Leave {
 
 // 1. Powiadomienia
 model Notification {
-  id            String   @id @default(cuid())
-  content       String
-  link          String
-  isRead        Boolean  @default(false)
-  isArchived Boolean @default(false)
-  userId        String
-  type          NotificationType @default(SYSTEM)
-  archived   Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id          String           @id @default(cuid())
+  content     String
+  link        String
+  isRead      Boolean          @default(false)
+  isArchived  Boolean          @default(false)
+  userId      String
+  type        NotificationType @default(SYSTEM)
+  archived    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  isSent      Boolean          @default(false) // 🆕 czy wysłane (dla scheduled)
+  scheduledAt DateTime? // 🆕 kiedy ma być wysłane
+  createdById String // kto utworzył
 
-  user          User     @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 }
 
 enum NotificationType {
@@ -216,15 +227,213 @@ enum NotificationType {
 
 // 2. Komunikator
 model Message {
-  id                 String   @id @default(cuid())
-  content            String
-  senderId           String
-  receiverId         String
-  isRead             Boolean  @default(false)
-  deletedBySender    Boolean  @default(false)
-  deletedByReceiver  Boolean  @default(false)
-  createdAt          DateTime @default(now())
+  id                String              @id @default(cuid())
+  content           String
+  senderId          String
+  receiverId        String
+  isRead            Boolean             @default(false)
+  deletedBySender   Boolean             @default(false)
+  deletedByReceiver Boolean             @default(false)
+  isDeleted         Boolean             @default(false) // Nowe pole do oznaczania usuniętych wiadomości
+  createdAt         DateTime            @default(now())
+  sender            User                @relation("senderMessages", fields: [senderId], references: [id])
+  receiver          User                @relation("receiverMessages", fields: [receiverId], references: [id])
+  attachments       MessageAttachment[]
+}
 
-  sender             User     @relation("senderMessages", fields: [senderId], references: [id])
-  receiver           User     @relation("receiverMessages", fields: [receiverId], references: [id])
+// Model załączników do wiadomości
+model MessageAttachment {
+  id         String   @id @default(cuid())
+  messageId  String
+  fileName   String
+  fileSize   Int
+  fileType   String
+  filePath   String
+  uploadedAt DateTime @default(now())
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+// Zarządzanie produkcją - modele
+model ProductionGuide {
+  id          String       @id @default(cuid())
+  title       String
+  barcode     String       @unique
+  description String?
+  priority    String       @default("NORMAL") // NORMAL, LOW, HIGH, CRITICAL
+  attachments Attachment[] @relation("ProductionGuideAttachments")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdById String
+  createdBy   User         @relation("CreatedGuides", fields: [createdById], references: [id])
+  status      String       @default("DRAFT") // DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
+
+  // Powiązania
+  steps     ProductionStep[]
+  inventory GuideInventory[]
+
+  // Indeksy
+  @@index([barcode])
+  @@index([createdById])
+  @@index([status])
+  @@index([priority])
+}
+
+model ProductionStep {
+  id             String            @id @default(cuid())
+  guideId        String
+  guide          ProductionGuide   @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  order          Int               @default(0)
+  estimatedTime  Int? // Szacowany czas w minutach
+  actualTime     Int? // Rzeczywisty czas w minutach
+  status         String            @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  assignedToRole String? // Rola, której ten krok jest przypisany
+  comments       StepComment[]
+  workSessions   StepWorkSession[]
+  attachments    Attachment[]      @relation("StepAttachments")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([guideId])
+  @@index([status])
+  @@index([assignedToRole])
+}
+
+model StepComment {
+  id          String             @id @default(cuid())
+  stepId      String
+  step        ProductionStep     @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  content     String
+  userId      String
+  user        User               @relation(fields: [userId], references: [id])
+  recipients  CommentRecipient[]
+  attachments Attachment[]       @relation("CommentAttachments")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([stepId])
+  @@index([userId])
+}
+
+model CommentRecipient {
+  id        String      @id @default(cuid())
+  commentId String
+  comment   StepComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  isRead    Boolean     @default(false)
+  createdAt DateTime    @default(now())
+
+  @@index([commentId])
+  @@index([userId])
+  @@index([isRead])
+}
+
+model StepWorkSession {
+  id        String         @id @default(cuid())
+  stepId    String
+  step      ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id])
+  startTime DateTime
+  endTime   DateTime?
+  duration  Int? // Czas w sekundach
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([stepId])
+  @@index([userId])
+  @@index([startTime])
+}
+
+model Attachment {
+  id                String           @id @default(cuid())
+  filename          String
+  path              String
+  size              Int
+  mimeType          String
+  // Relacje do innych modeli
+  productionGuideId String?
+  productionGuide   ProductionGuide? @relation("ProductionGuideAttachments", fields: [productionGuideId], references: [id], onDelete: SetNull)
+  productionStepId  String?
+  productionStep    ProductionStep?  @relation("StepAttachments", fields: [productionStepId], references: [id], onDelete: SetNull)
+  commentId         String?
+  comment           StepComment?     @relation("CommentAttachments", fields: [commentId], references: [id], onDelete: SetNull)
+  inventoryItemId   String?
+  inventoryItem     InventoryItem?   @relation("InventoryAttachments", fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  createdById       String
+  createdBy         User             @relation(fields: [createdById], references: [id])
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([productionGuideId])
+  @@index([productionStepId])
+  @@index([commentId])
+  @@index([inventoryItemId])
+  @@index([createdById])
+}
+
+// Modele dla zarządzania magazynem
+model InventoryItem {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  barcode     String       @unique
+  unit        String // pieces, kg, liters, meters, etc.
+  quantity    Float        @default(0)
+  location    String? // Miejsce w magazynie
+  minQuantity Float? // Minimalna ilość, która powinna być dostępna
+  attachments Attachment[] @relation("InventoryAttachments")
+  category    String?
+  createdById String
+  createdBy   User         @relation("CreatedInventoryItems", fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Powiązania
+  transactions InventoryTransaction[]
+  guideItems   GuideInventory[]
+
+  @@index([barcode])
+  @@index([createdById])
+  @@index([category])
+}
+
+model InventoryTransaction {
+  id        String        @id @default(cuid())
+  itemId    String
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+  quantity  Float // Ilość (dodatnia dla dodania, ujemna dla pobrania)
+  type      String // ADD, REMOVE, RESERVE, RELEASE
+  reason    String? // Powód transakcji
+  guideId   String? // Opcjonalne odniesienie do przewodnika produkcyjnego
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  createdAt DateTime      @default(now())
+
+  @@index([itemId])
+  @@index([userId])
+  @@index([type])
+  @@index([guideId])
+}
+
+model GuideInventory {
+  id        String          @id @default(cuid())
+  guideId   String
+  guide     ProductionGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      InventoryItem   @relation(fields: [itemId], references: [id])
+  quantity  Float // Ilość potrzebna do produkcji
+  stepId    String? // Opcjonalne powiązanie z konkretnym krokiem
+  reserved  Boolean         @default(true) // Czy przedmiot jest zarezerwowany
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([guideId, itemId])
+  @@index([guideId])
+  @@index([itemId])
+  @@index([stepId])
+  @@index([reserved])
 }

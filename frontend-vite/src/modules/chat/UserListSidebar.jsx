@@ -11,7 +11,7 @@ const UserListSidebar = ({ onSelectUser, selectedUser }) => {
     const fetchUsers = async () => {
       try {
         const { data } = await api.get('/users');
-        const filtered = data.filter((u) => u.id !== selectedUser?.id);
+        const filtered = data.filter((u) => u.id !== selectedUser?.id);  // Ensure we don't select the current user
         console.log('📦 Fetched users:', data);
         console.log('🧹 Filtered users (excluding self):', filtered);
         setUsers(filtered);
@@ -38,25 +38,33 @@ const UserListSidebar = ({ onSelectUser, selectedUser }) => {
     };
   }, []);
 
-  console.log('🧩 Rendering UserListSidebar... Users:', users, 'Online:', onlineUsers);
+  // Ensure users is always an array, and handle edge cases
+  if (!Array.isArray(users)) {
+    console.error("Expected 'users' to be an array but got", typeof users);
+    return <p>Error loading users</p>;
+  }
 
   return (
     <div className="w-1/4 border-r bg-gray-50 p-4">
       <h2 className="font-semibold text-lg mb-3">Użytkownicy</h2>
       <ul className="space-y-2">
-        {users.map((u) => (
-          <li
-            key={u.id}
-            onClick={() => onSelectUser(u)}
-            className={clsx(
-              'cursor-pointer p-2 rounded-lg hover:bg-gray-100 flex items-center justify-between',
-              selectedUser?.id === u.id && 'bg-indigo-100'
-            )}
-          >
-            <span>{u.firstName} {u.lastName}</span>
-            <span className={`w-2 h-2 rounded-full ${onlineUsers.includes(u.id) ? 'bg-green-500' : 'bg-gray-400'}`} />
-          </li>
-        ))}
+        {users.length > 0 ? (
+          users.map((u) => (
+            <li
+              key={u.id}
+              onClick={() => onSelectUser(u)}
+              className={clsx(
+                'cursor-pointer p-2 rounded-lg hover:bg-gray-100 flex items-center justify-between',
+                selectedUser?.id === u.id && 'bg-indigo-100'
+              )}
+            >
+              <span>{u.firstName} {u.lastName}</span>
+              <span className={`w-2 h-2 rounded-full ${onlineUsers.includes(u.id) ? 'bg-green-500' : 'bg-gray-400'}`} />
+            </li>
+          ))
+        ) : (
+          <li>No users available</li>
+        )}
       </ul>
     </div>
   );

@@ -13,12 +13,20 @@ const NotificationList = () => {
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">📬 Aktywne powiadomienia</h1>
-        <Link
-          to="/notifications/history"
-          className="text-sm text-indigo-600 hover:underline"
-        >
-          Przejdź do archiwum →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/notifications/scheduled"
+            className="text-sm text-indigo-600 hover:underline"
+          >
+            Zaplanowane →
+          </Link>
+          <Link
+            to="/notifications/history"
+            className="text-sm text-indigo-600 hover:underline"
+          >
+            Archiwum →
+          </Link>
+        </div>
       </div>
 
       {notifications.length === 0 && (

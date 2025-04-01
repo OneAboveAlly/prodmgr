@@ -64,6 +64,8 @@ const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
     const summary = summariesByDate[date];
     const isToday = date === today;
     
+    console.log('📅', date, summary);
+    
     calendarDays.push(
       <div 
         key={date} 

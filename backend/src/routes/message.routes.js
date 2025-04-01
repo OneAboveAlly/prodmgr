@@ -6,5 +6,7 @@ const messageController = require('../controllers/message.controller');
 router.use(checkAuth);
 
 router.post('/', messageController.sendMessage);
+router.get('/:partnerId', messageController.getMessages);
+router.delete('/:messageId', messageController.deleteMessage);
 
 module.exports = router;
