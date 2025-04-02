@@ -43,18 +43,12 @@ const MainLayout = ({ children }) => {
       permission: null
     },
     {
-      name: 'Produkcja',
-      path: '/production/guides',
-      icon: 'fas fa-industry',
-      permission: 'production.read'
-    },
-    {
       name: 'Magazyn',
-      path: '/inventory/items',
-      icon: 'fas fa-warehouse',
+      path: '/inventory',
+      icon: 'fas fa-boxes', // 📦 ikona z Font Awesome
       permission: 'inventory.read'
     },
-
+    
     {
       name: 'Users',
       path: '/users',

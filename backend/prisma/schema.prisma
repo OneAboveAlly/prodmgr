@@ -392,6 +392,8 @@ model InventoryItem {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  price       Float?
+
   // Powiązania
   transactions InventoryTransaction[]
   guideItems   GuideInventory[]

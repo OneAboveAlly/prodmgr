@@ -49,11 +49,11 @@ const getAllInventoryItems = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
-    
-    // Filtrowanie
+
     const { search, category, lowStock } = req.query;
+
     const where = {};
-    
+
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -62,23 +62,12 @@ const getAllInventoryItems = async (req, res) => {
         { location: { contains: search, mode: 'insensitive' } }
       ];
     }
-    
+
     if (category) {
       where.category = category;
     }
-    
-    if (lowStock === 'true') {
-      where.AND = [
-        { minQuantity: { not: null } },
-        {
-          quantity: {
-            lte: { ref: 'minQuantity' }
-          }
-        }
-      ];
-    }
-    
-    // Pobieranie danych
+
+    // Pobierz wszystkie przedmioty (jeszcze bez filtrowania lowStock)
     const [items, total] = await Promise.all([
       prisma.inventoryItem.findMany({
         where,
@@ -111,12 +100,18 @@ const getAllInventoryItems = async (req, res) => {
       }),
       prisma.inventoryItem.count({ where })
     ]);
-    
+
+    // 🔁 Filtrowanie po niskim stanie po stronie JS
+    let filteredItems = items;
+    if (lowStock === 'true') {
+      filteredItems = items.filter(item =>
+        item.minQuantity !== null && item.quantity <= item.minQuantity
+      );
+    }
+
     // Pobierz dostępne kategorie
     const categories = await prisma.inventoryItem.findMany({
-      select: {
-        category: true
-      },
+      select: { category: true },
       distinct: ['category'],
       where: {
         category: {
@@ -124,33 +119,25 @@ const getAllInventoryItems = async (req, res) => {
         }
       }
     });
-    
-    // Statystyki
+
+    // Statystyki (naprawiony licznik lowStock)
     const stats = {
       totalItems: total,
-      lowStockItems: await prisma.inventoryItem.count({
-        where: {
-          AND: [
-            { minQuantity: { not: null } },
-            {
-              quantity: {
-                lte: { ref: 'minQuantity' }
-              }
-            }
-          ]
-        }
-      }),
+      lowStockItems: (await prisma.inventoryItem.findMany({
+        where: { minQuantity: { not: null } },
+        select: { quantity: true, minQuantity: true }
+      })).filter(item => item.quantity <= item.minQuantity).length,
       categories: categories.map(cat => cat.category).filter(Boolean)
     };
-    
+
     res.json({
-      items,
+      items: filteredItems,
       stats,
       pagination: {
-        total,
+        total: filteredItems.length,
         page,
         limit,
-        pages: Math.ceil(total / limit)
+        pages: Math.ceil(filteredItems.length / limit)
       }
     });
   } catch (error) {
@@ -158,6 +145,7 @@ const getAllInventoryItems = async (req, res) => {
     res.status(500).json({ message: 'Błąd podczas pobierania przedmiotów magazynowych' });
   }
 };
+
 
 // Pobieranie szczegółów przedmiotu magazynowego
 const getInventoryItemById = async (req, res) => {
@@ -231,7 +219,12 @@ const getInventoryItemById = async (req, res) => {
 // Tworzenie nowego przedmiotu magazynowego
 const createInventoryItem = async (req, res) => {
   try {
-    const { name, description, unit, quantity, location, minQuantity, category, barcode } = req.body;
+    const { name, description, unit, quantity, location, minQuantity, category, barcode, price } = req.body;
+
+    if (price && isNaN(parseFloat(price))) {
+      return res.status(400).json({ message: 'Cena musi być liczbą' });
+    }
+    
     
     // Generuj unikalny kod kreskowy, jeśli nie podano
     const uniqueBarcode = barcode || await barcodeGenerator.generateUniqueBarcode('mag');
@@ -258,6 +251,7 @@ const createInventoryItem = async (req, res) => {
           location,
           minQuantity: minQuantity ? parseFloat(minQuantity) : null,
           category,
+          price: price ? parseFloat(price) : null,
           createdById: req.user.id
         }
       });
@@ -345,7 +339,7 @@ const createInventoryItem = async (req, res) => {
 const updateInventoryItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, unit, location, minQuantity, category, barcode } = req.body;
+    const { name, description, unit, location, minQuantity, category, barcode, price } = req.body;
     
     // Sprawdź, czy przedmiot istnieje
     const existingItem = await prisma.inventoryItem.findUnique({
@@ -378,6 +372,7 @@ const updateInventoryItem = async (req, res) => {
     if (location !== undefined) updateData.location = location;
     if (minQuantity !== undefined) updateData.minQuantity = minQuantity !== null ? parseFloat(minQuantity) : null;
     if (category !== undefined) updateData.category = category;
+    if (price !== undefined) updateData.price = price !== null ? parseFloat(price) : null;
     if (barcode) updateData.barcode = barcode;
     updateData.updatedAt = new Date();
     
@@ -1077,6 +1072,92 @@ const updateReservationStatus = async (req, res) => {
   }
 };
 
+// 📦 Zwraca wszystkie transakcje (globalna historia)
+const getAllInventoryTransactions = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+    const { date, type, user, search } = req.query;
+
+    const where = {};
+
+    if (type) {
+      where.type = type;
+    }
+
+    if (user) {
+      where.user = {
+        OR: [
+          { firstName: { contains: user, mode: 'insensitive' } },
+          { lastName: { contains: user, mode: 'insensitive' } }
+        ]
+      };
+    }
+
+    if (search) {
+      where.OR = [
+        { reason: { contains: search, mode: 'insensitive' } },
+        { item: { name: { contains: search, mode: 'insensitive' } } },
+        { user: {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } }
+            ]
+          }
+        }
+      ];
+    }
+
+    if (date) {
+      const start = new Date(date);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: start, lte: end };
+    }
+
+    const [transactions, total] = await Promise.all([
+      prisma.inventoryTransaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
+            }
+          },
+          item: {
+            select: {
+              id: true,
+              name: true,
+              unit: true
+            }
+          }
+        }
+      }),
+      prisma.inventoryTransaction.count({ where })
+    ]);
+
+    res.json({
+      transactions,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('❌ Błąd przy pobieraniu wszystkich transakcji:', err);
+    res.status(500).json({ message: 'Błąd serwera przy pobieraniu transakcji' });
+  }
+};
+
+
 // Pobieranie historii transakcji przedmiotu
 const getItemTransactions = async (req, res) => {
   try {
@@ -1135,43 +1216,49 @@ const getItemTransactions = async (req, res) => {
 const generateInventoryReport = async (req, res) => {
   try {
     const { category, lowStock } = req.query;
-    
-    // Przygotuj filtry
+
     const where = {};
-    
     if (category) {
       where.category = category;
     }
-    
-    if (lowStock === 'true') {
-      where.AND = [
-        { minQuantity: { not: null } },
-        {
-          quantity: {
-            lte: { ref: 'minQuantity' }
-          }
-        }
-      ];
-    }
-    
-    // Pobierz dane
-    const items = await prisma.inventoryItem.findMany({
+
+    // Pobierz dane z bazy
+    let items = await prisma.inventoryItem.findMany({
       where,
       orderBy: { name: 'asc' },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        barcode: true,
+        category: true,
+        location: true,
+        unit: true,
+        quantity: true,
+        minQuantity: true,
+        price: true,
         guideItems: {
           where: {
             reserved: true
+          },
+          select: {
+            quantity: true
           }
         }
       }
     });
-    
-    // Przygotuj dane raportu
+
+    // 🔁 Filtrowanie niskiego stanu magazynowego
+    if (lowStock === 'true') {
+      items = items.filter(item =>
+        item.minQuantity !== null && item.quantity <= item.minQuantity
+      );
+    }
+
+    // 📦 Przekształć dane do raportu
     const reportItems = items.map(item => {
       const reserved = item.guideItems.reduce((total, gi) => total + gi.quantity, 0);
       const available = Math.max(0, item.quantity - reserved);
-      
+
       return {
         id: item.id,
         name: item.name,
@@ -1181,17 +1268,19 @@ const generateInventoryReport = async (req, res) => {
         unit: item.unit,
         quantity: item.quantity,
         reserved,
+        price: item.price ?? null,
         available,
         minQuantity: item.minQuantity,
-        status: item.minQuantity !== null && item.quantity <= item.minQuantity
-          ? 'Niski stan'
-          : available <= 0
-            ? 'Brak dostępnych (zarezerwowane)'
-            : 'OK'
+        status:
+          item.minQuantity !== null && item.quantity <= item.minQuantity
+            ? 'Niski stan'
+            : available <= 0
+              ? 'Brak dostępnych (zarezerwowane)'
+              : 'OK'
       };
     });
-    
-    // Statystyki
+
+    // 📊 Statystyki raportu
     const stats = {
       totalItems: reportItems.length,
       totalQuantity: reportItems.reduce((total, item) => total + item.quantity, 0),
@@ -1200,11 +1289,10 @@ const generateInventoryReport = async (req, res) => {
       lowStockItems: reportItems.filter(item => item.status === 'Niski stan').length,
       categories: [...new Set(reportItems.map(item => item.category))]
     };
-    
-    // Generuj timestamp dla raportu
+
     const timestamp = new Date().toISOString();
-    
-    // Logowanie audytu
+
+    // 📘 Audit log
     await logAudit({
       userId: req.user.id,
       action: 'report',
@@ -1216,7 +1304,7 @@ const generateInventoryReport = async (req, res) => {
         stats
       }
     });
-    
+
     res.json({
       report: {
         title: 'Raport Stanu Magazynu',
@@ -1231,6 +1319,7 @@ const generateInventoryReport = async (req, res) => {
   }
 };
 
+
 module.exports = {
   handleFileUpload,
   getAllInventoryItems,
@@ -1244,5 +1333,6 @@ module.exports = {
   removeItemFromProductionGuide,
   updateReservationStatus,
   getItemTransactions,
-  generateInventoryReport
+  generateInventoryReport,
+  getAllInventoryTransactions
 };

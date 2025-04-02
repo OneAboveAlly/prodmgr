@@ -31,6 +31,13 @@ import NotificationListPage from './pages/NotificationListPage';
 import ScheduleNotificationPage from './pages/ScheduleNotificationPage';
 import ScheduledNotificationsPage from './pages/ScheduledNotificationsPage';
 import ScheduleNotificationEditPage from './pages/notifications/ScheduleNotificationEditPage';
+import InventoryPage from './pages/inventory/InventoryPage';
+import InventoryItemDetails from './pages/inventory/InventoryItemDetails';
+import InventoryReportPage from './pages/inventory/InventoryReportPage';
+import InventoryTransactionsPage from './pages/inventory/InventoryTransactionsPage';
+import InventoryItemEditPage from './pages/inventory/InventoryItemEditPage';
+
+
 
 
 
@@ -299,6 +306,61 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              
+              <Route
+  path="/inventory"
+  element={
+    <ProtectedRoute requiredPermission={['inventory', 'read']}>
+      <MainLayout>
+        <InventoryPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/inventory/items/:id"
+  element={
+    <ProtectedRoute requiredPermission={['inventory', 'read']}>
+      <MainLayout>
+        <InventoryItemDetails />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/inventory/items/edit/:id"
+  element={
+    <ProtectedRoute requiredPermission={['inventory', 'update']}>
+      <MainLayout>
+        <InventoryItemEditPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/inventory/report"
+  element={
+    <ProtectedRoute requiredPermission={['inventory', 'read', 2]}>
+      <MainLayout>
+        <InventoryReportPage key={window.location.pathname + Date.now()} />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/inventory/transactions"
+  element={
+    <ProtectedRoute requiredPermission={['inventory', 'read']}>
+      <MainLayout>
+        <InventoryTransactionsPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
+
 
               {/* Redirect root to dashboard */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -85,4 +85,12 @@ router.get(
   inventoryController.generateInventoryReport
 );
 
+
+router.get(
+  '/transactions/all',
+  checkPermission('inventory', 'read', 1),
+  inventoryController.getAllInventoryTransactions 
+);
+
+
 module.exports = router;
