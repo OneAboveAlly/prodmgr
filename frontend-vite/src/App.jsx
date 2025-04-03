@@ -36,6 +36,13 @@ import InventoryItemDetails from './pages/inventory/InventoryItemDetails';
 import InventoryReportPage from './pages/inventory/InventoryReportPage';
 import InventoryTransactionsPage from './pages/inventory/InventoryTransactionsPage';
 import InventoryItemEditPage from './pages/inventory/InventoryItemEditPage';
+import ManualWorkEntryPanel from './pages/production/ManualWorkEntryPanel';
+import ProductionGuidesListPage from './pages/production/ProductionGuidesListPage';
+import CreateProductionGuidePage from './pages/production/CreateProductionGuidePage';
+import ProductionPage from './pages/production/ProductionPage';
+import ProductionGuideDetailsPage from './pages/production/ProductionGuideDetailsPage';
+
+
 
 
 
@@ -359,8 +366,56 @@ function App() {
     </ProtectedRoute>
   }
 />
-
-
+<Route
+  path="/production/guides/:id/manual-work"
+  element={
+    <ProtectedRoute requiredPermission={['production', 'manualWork']}>
+      <MainLayout>
+        <ManualWorkEntryPanel />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/production/guides"
+  element={
+    <ProtectedRoute requiredPermission={['production', 'view']}>
+      <MainLayout>
+        <ProductionGuidesListPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/production/guides/new"
+  element={
+    <ProtectedRoute requiredPermission={['production', 'create']}>
+      <MainLayout>
+        <CreateProductionGuidePage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/production"
+  element={
+    <ProtectedRoute requiredPermission={['production', 'view']}>
+      <MainLayout>
+        <ProductionPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/production/guides/:id"
+  element={
+    <ProtectedRoute requiredPermission={['production', 'view']}>
+      <MainLayout>
+        <ProductionGuideDetailsPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
 
               {/* Redirect root to dashboard */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

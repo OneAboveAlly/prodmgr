@@ -89,4 +89,42 @@ router.delete(
   productionController.deleteAttachment
 );
 
+// Przypisanie użytkownika do przewodnika
+router.post(
+  '/guides/:id/assign',
+  checkPermission('production', 'manage', 2),
+  productionController.assignUserToGuide
+);
+
+// Usunięcie przypisania użytkownika
+router.delete(
+  '/guides/:id/assign/:userId',
+  checkPermission('production', 'manage', 2),
+  productionController.removeUserFromGuide
+);
+
+router.post(
+  '/guides/:id/assign-user',
+  checkPermission('production', 'assign', 1),
+  productionController.assignUserToGuide
+);
+
+router.get(
+  '/guides/:id/assigned-users',
+  checkPermission('production', 'read', 1),
+  productionController.getAssignedUsers
+);
+
+router.post(
+  '/guides/:id/assign-users',
+  checkPermission('production', 'assign', 1),
+  productionController.assignMultipleUsersToGuide
+);
+
+router.post(
+  '/guides/:id/manual-work',
+  checkPermission('production', 'work', 1),
+  productionController.addManualWorkEntry
+);
+
 module.exports = router;

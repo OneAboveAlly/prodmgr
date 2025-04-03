@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PermissionDebugger from '../common/PermissionDebugger';
-import useSocketNotifications from '@/modules/notifications/hooks/useSocketNotifications';
+import useSocketNotifications from '../../modules/notifications/hooks/useSocketNotifications'; // Fixed import path
 import NotificationBadge from '../NotificationBadge'; // Import the NotificationBadge component
 import { MessageCircle } from 'lucide-react'; // Import MessageCircle icon from lucide-react
 
@@ -45,58 +45,66 @@ const MainLayout = ({ children }) => {
     {
       name: 'Magazyn',
       path: '/inventory',
-      icon: 'fas fa-boxes', // 📦 ikona z Font Awesome
+      icon: 'fas fa-boxes',
       permission: 'inventory.read'
     },
-    
     {
-      name: 'Users',
+      name: 'Produkcja',
+      path: '/production',
+      icon: 'fas fa-industry',
+      permission: 'production.view'
+    },   
+
+    {
+      name: 'Dodaj przewodnik',
+      path: '/production/guides/new',
+      icon: 'fas fa-plus-circle',
+      permission: 'production.create'
+    },
+    {
+      name: 'Użytkownicy',
       path: '/users',
       icon: 'fas fa-users',
       permission: 'users.read'
     },
     {
-      name: 'Roles',
+      name: 'Role',
       path: '/roles',
       icon: 'fas fa-user-tag',
       permission: 'roles.read'
     },
     {
-      name: 'Notifications',
+      name: 'Powiadomienia',
       path: '/notifications',
       icon: 'fas fa-bell',
-      permission: 'notifications.read' // lub np. 'notifications.read' jeśli chcesz dodać kontrolę
+      permission: 'notifications.read'
     },
     {
-      name: 'Send Notification',
+      name: 'Wyślij powiadomienie',
       path: '/notifications/send',
       icon: 'fas fa-paper-plane',
       permission: 'notifications.send'
     },
-    
     {
-      name: 'Audit Logs',
+      name: 'Logi audytu',
       path: '/audit-logs',
       icon: 'fas fa-history',
       permission: 'auditLogs.read'
     },
-    
-    // Time tracking
     {
-      name: 'Time Tracking',
+      name: 'Czas pracy',
       path: '/time-tracking',
       icon: 'fas fa-clock',
-      permission: 'timeTracking.read' // Only users with this permission can see this
+      permission: 'timeTracking.read'
     },
-    // Leave management
     {
-      name: 'Leave Management',
+      name: 'Urlopy',
       path: '/leave',
       icon: 'fas fa-calendar-alt',
-      permission: 'leave.read' // Only users with this permission can see this
+      permission: 'leave.read'
     }
-    // Add more navigation links here as your application grows
   ];
+  
   
   // Check if a nav link is currently active
   const isActivePath = (path) => {
@@ -153,8 +161,16 @@ const MainLayout = ({ children }) => {
         
         <nav className="mt-5">
           <ul>
-            {navLinks.map(
-              (link) =>
+            {navLinks.map((link) => {
+              if (link.isSection) {
+                return sidebarOpen ? (
+                  <li key={link.name} className="px-4 py-2 text-xs uppercase text-indigo-200 tracking-wider">
+                    {link.name}
+                  </li>
+                ) : null;
+              }
+              
+              return (
                 checkPermission(link.permission) && (
                   <li key={link.path} className="mb-2">
                     <Link
@@ -170,7 +186,8 @@ const MainLayout = ({ children }) => {
                     </Link>
                   </li>
                 )
-            )}
+              );
+            })}
           </ul>
         </nav>
       </div>
@@ -229,9 +246,7 @@ const MainLayout = ({ children }) => {
         
       </div>
     </div>
-  
-);
-  
+  );
 };
 
 export default MainLayout;

@@ -40,6 +40,8 @@ model User {
   inventoryTransactions InventoryTransaction[]
   createdInventoryItems InventoryItem[]        @relation("CreatedInventoryItems")
   Attachment            Attachment[]
+  assignedGuides GuideAssignment[]
+
 }
 
 model Role {
@@ -266,6 +268,8 @@ model ProductionGuide {
   createdById String
   createdBy   User         @relation("CreatedGuides", fields: [createdById], references: [id])
   status      String       @default("DRAFT") // DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
+  assignedUsers GuideAssignment[]
+
 
   // Powiązania
   steps     ProductionStep[]
@@ -438,4 +442,16 @@ model GuideInventory {
   @@index([itemId])
   @@index([stepId])
   @@index([reserved])
+}
+
+model GuideAssignment {
+  guideId String
+  userId  String
+
+  guide   ProductionGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([guideId, userId]) // Klucz złożony
+  @@index([guideId])
+  @@index([userId])
 }

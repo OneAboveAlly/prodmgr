@@ -1102,6 +1102,316 @@ const endWorkOnStep = async (req, res) => {
   }
 };
 
+// backend/src/controllers/production.controller.js
+// (dodaj gdzieś pod koniec pliku lub obok endWorkOnStep)
+
+const addManualWorkEntry = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { durationMinutes, note } = req.body;
+    const userId = req.user.id;
+
+    if (!durationMinutes || durationMinutes <= 0) {
+      return res.status(400).json({ message: 'Czas musi być większy od 0 minut' });
+    }
+
+    // Sprawdzenie czy przewodnik istnieje
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        steps: true,
+        assignedUsers: true
+      }
+    });
+
+    if (!guide) {
+      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
+    }
+
+    // Sprawdzenie czy user jest przypisany lub ma uprawnienie
+    const isAssigned = guide.assignedUsers.some(a => a.userId === userId);
+    const isManager = req.user.permissions['production.manageAll'];
+
+    if (!isAssigned && !isManager) {
+      return res.status(403).json({ message: 'Nie jesteś przypisany do przewodnika' });
+    }
+
+    // Obliczenie limitu czasu
+    const estimatedTotal = guide.steps.reduce((sum, s) => sum + (s.estimatedTime || 0), 0);
+
+    const usedTotal = await prisma.stepWorkSession.aggregate({
+      where: {
+        step: { guideId },
+      },
+      _sum: { duration: true }
+    });
+
+    const usedMinutes = Math.floor((usedTotal._sum.duration || 0) / 60);
+
+    if ((usedMinutes + durationMinutes) > estimatedTotal) {
+      return res.status(400).json({
+        message: `Limit czasu dla przewodnika przekroczony. Dostępne: ${estimatedTotal - usedMinutes} min.`
+      });
+    }
+
+    // Znajdź pierwszy niezakonczony krok
+    const step = guide.steps.find(s => s.status !== 'COMPLETED');
+    if (!step) {
+      return res.status(400).json({ message: 'Wszystkie kroki są ukończone' });
+    }
+
+    const durationSeconds = durationMinutes * 60;
+
+    const session = await prisma.stepWorkSession.create({
+      data: {
+        stepId: step.id,
+        userId,
+        duration: durationSeconds,
+        startTime: new Date(),
+        endTime: new Date(),
+        note
+      }
+    });
+
+    // Sprawdzenie czy należy zakończyć przewodnik
+    const newUsedMinutes = usedMinutes + durationMinutes;
+    if (newUsedMinutes >= estimatedTotal) {
+      await prisma.productionGuide.update({
+        where: { id: guideId },
+        data: { status: 'COMPLETED' }
+      });
+    }
+
+    // Loguj audyt
+    await logAudit({
+      userId,
+      action: 'manualWork',
+      module: 'production',
+      targetId: guideId,
+      meta: {
+        durationMinutes,
+        note,
+        stepId: step.id,
+        guideTitle: guide.title
+      }
+    });
+
+    // Powiadomienie (np. socket)
+    const content = `Dodano wpis pracy manualnej dla przewodnika "${guide.title}" (${durationMinutes} min)`;
+    const link = `/production/guides/${guideId}`;
+    await sendNotification(req.app.get('io'), prisma, userId, content, link);
+
+    res.status(201).json({
+      session,
+      message: 'Czas pracy zapisany pomyślnie'
+    });
+  } catch (error) {
+    console.error('Błąd przy dodawaniu pracy manualnej:', error);
+    res.status(500).json({ message: 'Błąd serwera podczas dodawania pracy' });
+  }
+};
+
+module.exports = {
+  // ... inne eksporty
+  addManualWorkEntry
+};
+
+// Przypisywanie użytkownika do przewodnika
+const assignUserToGuide = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "Brakuje pola userId" });
+    }
+
+    // Sprawdź czy przewodnik istnieje
+    const guide = await prisma.productionGuide.findUnique({ where: { id: guideId } });
+    if (!guide) {
+      return res.status(404).json({ message: "Przewodnik nie istnieje" });
+    }
+
+    // Sprawdź czy użytkownik istnieje
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ message: "Użytkownik nie istnieje" });
+    }
+
+    // Sprawdź czy już przypisany
+    const exists = await prisma.guideAssignment.findUnique({
+      where: { guideId_userId: { guideId, userId } }
+    });
+    if (exists) {
+      return res.status(400).json({ message: "Użytkownik już przypisany do przewodnika" });
+    }
+
+    // Przypisz
+    const assignment = await prisma.guideAssignment.create({
+      data: { guideId, userId }
+    });
+
+    // Log audytu
+    await logAudit({
+      userId: req.user.id,
+      action: "assign",
+      module: "production",
+      targetId: guideId,
+      meta: {
+        assignedUser: {
+          id: user.id,
+          name: `${user.firstName} ${user.lastName}`
+        }
+      }
+    });
+//Notyfikacja
+await sendNotification(
+  req.app.get('io'),
+  prisma,
+  user.id,
+  `Zostałeś przypisany do przewodnika "${guide.title}"`,
+  `/production/guides/${guide.id}`
+);
+
+    // Możesz tu dodać też powiadomienie jak chcesz
+
+    res.status(201).json({
+      assignment,
+      message: `Użytkownik ${user.firstName} ${user.lastName} przypisany do przewodnika`
+    });
+  } catch (error) {
+    console.error("❌ Błąd przypisywania użytkownika:", error);
+    res.status(500).json({ message: "Błąd serwera podczas przypisywania użytkownika" });
+  }
+};
+
+//GetAssignedUsers
+const getAssignedUsers = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+
+    // Sprawdź, czy przewodnik istnieje
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        assignedUsers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                login: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!guide) {
+      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
+    }
+
+    const users = guide.assignedUsers.map(a => a.user);
+
+    res.json({ users });
+  } catch (error) {
+    console.error('❌ Błąd pobierania przypisanych użytkowników:', error);
+    res.status(500).json({ message: 'Błąd serwera podczas pobierania przypisanych użytkowników' });
+  }
+};
+
+//Dodawanie kilku użytkowników do przewodnika
+const assignMultipleUsersToGuide = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'Wymagana lista userIds (tablica)' });
+    }
+
+    const guide = await prisma.productionGuide.findUnique({ where: { id: guideId } });
+    if (!guide) {
+      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
+    }
+
+    const validUsers = await prisma.user.findMany({
+      where: {
+        id: { in: userIds }
+      }
+    });
+
+    const alreadyAssigned = await prisma.guideAssignment.findMany({
+      where: {
+        guideId,
+        userId: { in: userIds }
+      },
+      select: { userId: true }
+    });
+
+    const alreadyAssignedIds = new Set(alreadyAssigned.map(a => a.userId));
+
+    const toAssign = validUsers.filter(user => !alreadyAssignedIds.has(user.id));
+
+    // Transakcja do utworzenia przypisań
+    await prisma.$transaction([
+      ...toAssign.map(user =>
+        prisma.guideAssignment.create({
+          data: { guideId, userId: user.id }
+        })
+      ),
+      ...toAssign.map(user =>
+        sendNotification(
+          req.app.get('io'),
+          prisma,
+          user.id,
+          `Zostałeś przypisany do przewodnika "${guide.title}"`,
+          `/production/guides/${guide.id}`
+        )
+      ),
+      logAudit({
+        userId: req.user.id,
+        action: 'assign-multiple',
+        module: 'production',
+        targetId: guideId,
+        meta: {
+          assignedUserIds: toAssign.map(u => u.id),
+          totalAssigned: toAssign.length
+        }
+      })
+    ]);
+
+    res.status(201).json({
+      message: `Przypisano ${toAssign.length} użytkowników do przewodnika`,
+      assignedUserIds: toAssign.map(u => u.id)
+    });
+  } catch (error) {
+    console.error('❌ Błąd masowego przypisywania:', error);
+    res.status(500).json({ message: 'Błąd serwera podczas przypisywania wielu użytkowników' });
+  }
+};
+
+
+// ✅ Usuń przypisanie użytkownika z przewodnika
+const removeUserFromGuide = async (req, res) => {
+  try {
+    const { id: guideId, userId } = req.params;
+
+    await prisma.guideAssignment.delete({
+      where: { guideId_userId: { guideId, userId } }
+    });
+
+    res.json({ message: 'Użytkownik usunięty z przewodnika' });
+  } catch (error) {
+    console.error('Błąd usuwania przypisania:', error);
+    res.status(500).json({ message: 'Błąd usuwania przypisania użytkownika' });
+  }
+};
+
+
 // Dodawanie komentarza do kroku
 const addStepComment = async (req, res) => {
   try {
@@ -1237,5 +1547,10 @@ module.exports = {
   deleteProductionStep,
   startWorkOnStep,
   endWorkOnStep,
-  addStepComment
+  addStepComment,
+  assignUserToGuide,
+  removeUserFromGuide,
+  getAssignedUsers,
+  assignMultipleUsersToGuide,
+  addManualWorkEntry
 };
