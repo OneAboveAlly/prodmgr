@@ -54,7 +54,6 @@ const userApi = {
     }
   },
 
-  // Get users by role name
   getUsersByRole: async (roleName) => {
     try {
       const response = await api.get(`${BASE_URL}/role/${roleName}`);
@@ -63,6 +62,20 @@ const userApi = {
       console.error(`Error fetching users with role ${roleName}:`, error.response?.status || error.message);
       throw error;
     }
+  },
+
+  // New methods
+  fetchAllUsers: async () => {
+    const res = await fetch('/api/users');
+    return res.json();
+  },
+
+  assignUserToGuide: async (guideId, userId) => {
+    return fetch(`/api/guides/${guideId}/assign/${userId}`, { method: 'POST' });
+  },
+
+  unassignUserFromGuide: async (guideId, userId) => {
+    return fetch(`/api/guides/${guideId}/unassign/${userId}`, { method: 'DELETE' });
   }
 };
 

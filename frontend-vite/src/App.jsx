@@ -37,14 +37,12 @@ import InventoryReportPage from './pages/inventory/InventoryReportPage';
 import InventoryTransactionsPage from './pages/inventory/InventoryTransactionsPage';
 import InventoryItemEditPage from './pages/inventory/InventoryItemEditPage';
 
-// Production pages
-import ManualWorkEntryPanel from './pages/production/ManualWorkEntryPanel';
-import ProductionGuidesListPage from './pages/production/ProductionGuidesListPage';
-import CreateProductionGuidePage from './pages/production/CreateProductionGuidePage';
-import ProductionPage from './pages/production/ProductionPage';
-import ProductionGuideDetailsPage from './pages/production/ProductionGuideDetailsPage';
-import EditProductionGuidePage from './pages/production/EditProductionGuidePage';
-import ProductionTemplatesPage from './pages/production/ProductionTemplatesPage';
+// Production Pages
+import ProductionPage from './pages/ProductionPage';
+import ProductionCreatePage from './pages/ProductionCreatePage';
+import ProductionGuideDetailsPage from './pages/ProductionGuideDetailsPage';
+import ProductionStepDetailsPage from './pages/ProductionStepDetailsPage';
+import ProductionGuideEditPage from './pages/ProductionGuideEditPage';
 
 // Time Tracking and Leave routes
 import TimeTrackingPage from './pages/TimeTrackingPage';
@@ -372,72 +370,44 @@ function App() {
               <Route
                 path="/production"
                 element={
-                  <Navigate to="/production/guides" replace />
-                }
-              />
-
-              <Route
-                path="/production/guides"
-                element={
-                  <ProtectedRoute requiredPermission={['production', 'view']}>
+                  <ProtectedRoute requiredPermission={['production', 'read']}>
                     <MainLayout>
-                      <ProductionGuidesListPage />
+                      <ProductionPage />
                     </MainLayout>
                   </ProtectedRoute>
                 }
               />
-
               <Route
-                path="/production/guides/new"
+                path="/production/new"
                 element={
                   <ProtectedRoute requiredPermission={['production', 'create']}>
-                    <MainLayout>
-                      <CreateProductionGuidePage />
-                    </MainLayout>
+                    <ProductionCreatePage />
                   </ProtectedRoute>
                 }
               />
-
-              <Route
-                path="/production/guides/edit/:id"
-                element={
-                  <ProtectedRoute requiredPermission={['production', 'update']}>
-                    <MainLayout>
-                      <EditProductionGuidePage />
-                    </MainLayout>
-                  </ProtectedRoute>
-                }
-              />
-
               <Route
                 path="/production/guides/:id"
                 element={
-                  <ProtectedRoute requiredPermission={['production', 'view']}>
+                  <ProtectedRoute requiredPermission={['production', 'read']}>
+                    <ProductionGuideDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/production/guides/:id/edit"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'update']}>
                     <MainLayout>
-                      <ProductionGuideDetailsPage />
+                      <ProductionGuideEditPage />
                     </MainLayout>
                   </ProtectedRoute>
                 }
               />
-
               <Route
-                path="/production/guides/:id/manual-work"
+                path="/production/steps/:id"
                 element={
-                  <ProtectedRoute requiredPermission={['production', 'manualWork']}>
-                    <MainLayout>
-                      <ManualWorkEntryPanel />
-                    </MainLayout>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/production/templates"
-                element={
-                  <ProtectedRoute requiredPermission={['production', 'view']}>
-                    <MainLayout>
-                      <ProductionTemplatesPage />
-                    </MainLayout>
+                  <ProtectedRoute requiredPermission={['production', 'read']}>
+                    <ProductionStepDetailsPage />
                   </ProtectedRoute>
                 }
               />

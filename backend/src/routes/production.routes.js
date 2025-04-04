@@ -174,4 +174,26 @@ router.delete(
   productionController.deleteAttachment
 );
 
+// --- Step Assignment Routes ---
+// Get all users assigned to a step
+router.get(
+  '/steps/:stepId/assigned-users',
+  checkPermission('production', 'read', 1),
+  productionController.getStepAssignedUsers
+);
+
+// Assign users to a step
+router.post(
+  '/steps/:stepId/assign-users',
+  checkPermission('production', 'assign', 1),
+  productionController.assignUsersToStep
+);
+
+// Remove user assignment from a step
+router.delete(
+  '/steps/:stepId/assign/:userId',
+  checkPermission('production', 'assign', 1),
+  productionController.removeUserFromStep
+);
+
 module.exports = router;

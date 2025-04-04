@@ -43,23 +43,16 @@ const MainLayout = ({ children }) => {
       permission: null
     },
     {
+      name: 'Produkcja',
+      path: '/production',
+      icon: 'fas fa-industry',
+      permission: 'production.read'
+    },
+    {
       name: 'Magazyn',
       path: '/inventory',
       icon: 'fas fa-boxes',
       permission: 'inventory.read'
-    },
-    {
-      name: 'Produkcja',
-      path: '/production',
-      icon: 'fas fa-industry',
-      permission: 'production.view'
-    },   
-
-    {
-      name: 'Dodaj przewodnik',
-      path: '/production/guides/new',
-      icon: 'fas fa-plus-circle',
-      permission: 'production.create'
     },
     {
       name: 'Użytkownicy',

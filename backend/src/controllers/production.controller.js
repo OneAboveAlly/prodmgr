@@ -2316,6 +2316,247 @@ const addManualWorkEntry = async (req, res) => {
   }
 };
 
+// Get users assigned to a specific step
+const getStepAssignedUsers = async (req, res) => {
+  try {
+    const { stepId } = req.params;
+    
+    // Check if step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId }
+    });
+    
+    if (!step) {
+      return res.status(404).json({ message: 'Production step not found' });
+    }
+    
+    // Get users assigned to the step
+    const assignments = await prisma.stepAssignment.findMany({
+      where: { stepId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profilePicture: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+    
+    // Transform the result to return just the user objects
+    const users = assignments.map(assignment => assignment.user);
+    
+    res.json(users);
+  } catch (error) {
+    console.error('Error getting step assigned users:', error);
+    res.status(500).json({ message: 'Error retrieving assigned users' });
+  }
+};
+
+// Assign multiple users to a step
+const assignUsersToStep = async (req, res) => {
+  try {
+    const { stepId } = req.params;
+    const { userIds, notify = true, notifyMessage } = req.body;
+    
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'Invalid or empty userIds array' });
+    }
+    
+    // Check if step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId },
+      include: {
+        guide: true
+      }
+    });
+    
+    if (!step) {
+      return res.status(404).json({ message: 'Production step not found' });
+    }
+    
+    // Process each user assignment
+    const results = [];
+    const errors = [];
+    
+    for (const userId of userIds) {
+      try {
+        // Check if user exists
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, firstName: true, lastName: true }
+        });
+        
+        if (!user) {
+          errors.push({ userId, error: 'User not found' });
+          continue;
+        }
+        
+        // Check if assignment already exists
+        const existingAssignment = await prisma.stepAssignment.findUnique({
+          where: {
+            stepId_userId: {
+              stepId: stepId,
+              userId: userId
+            }
+          }
+        });
+        
+        if (existingAssignment) {
+          // Assignment already exists, skip
+          results.push({ userId, success: true, message: 'User already assigned' });
+          continue;
+        }
+        
+        // Create the assignment
+        await prisma.stepAssignment.create({
+          data: {
+            stepId: stepId,
+            userId: userId
+          }
+        });
+        
+        // Send notification if requested
+        if (notify) {
+          const message = notifyMessage 
+            ? notifyMessage 
+            : `You have been assigned to step "${step.title}" in production guide "${step.guide.title}"`;
+          
+          await sendNotification(
+            req.app.get('io'),
+            prisma,
+            userId,
+            message,
+            `/production/steps/${stepId}`
+          );
+        }
+        
+        results.push({ 
+          userId, 
+          success: true, 
+          message: 'User assigned successfully' 
+        });
+      } catch (error) {
+        console.error(`Error assigning user ${userId}:`, error);
+        errors.push({ userId, error: error.message });
+      }
+    }
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: 'assign',
+      module: 'stepAssignment',
+      targetId: stepId,
+      meta: {
+        stepId,
+        stepTitle: step.title,
+        guideId: step.guideId,
+        guideTitle: step.guide.title,
+        userIds: results.filter(r => r.success).map(r => r.userId),
+        notify,
+        notifyMessage
+      }
+    });
+    
+    res.json({
+      success: errors.length === 0,
+      results,
+      errors,
+      message: `${results.length} users assigned to step, ${errors.length} errors`
+    });
+  } catch (error) {
+    console.error('Error assigning users to step:', error);
+    res.status(500).json({ message: 'Error assigning users to production step' });
+  }
+};
+
+// Remove a user assignment from a step
+const removeUserFromStep = async (req, res) => {
+  try {
+    const { stepId, userId } = req.params;
+    
+    // Check if step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId },
+      include: {
+        guide: true
+      }
+    });
+    
+    if (!step) {
+      return res.status(404).json({ message: 'Production step not found' });
+    }
+    
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, firstName: true, lastName: true }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Check if assignment exists
+    const assignment = await prisma.stepAssignment.findUnique({
+      where: {
+        stepId_userId: {
+          stepId: stepId,
+          userId: userId
+        }
+      }
+    });
+    
+    if (!assignment) {
+      return res.status(404).json({ message: 'User is not assigned to this step' });
+    }
+    
+    // Remove the assignment
+    await prisma.stepAssignment.delete({
+      where: {
+        stepId_userId: {
+          stepId: stepId,
+          userId: userId
+        }
+      }
+    });
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: 'unassign',
+      module: 'stepAssignment',
+      targetId: stepId,
+      meta: {
+        stepId,
+        stepTitle: step.title,
+        guideId: step.guideId,
+        guideTitle: step.guide.title,
+        removedUserId: userId,
+        user: {
+          firstName: user.firstName,
+          lastName: user.lastName
+        }
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: `User ${user.firstName} ${user.lastName} has been removed from the step`
+    });
+  } catch (error) {
+    console.error('Error removing user from step:', error);
+    res.status(500).json({ message: 'Error removing user from production step' });
+  }
+};
+
 // Eksport wszystkich funkcji kontrolera
 module.exports = {
   handleFileUpload,
@@ -2340,5 +2581,8 @@ module.exports = {
   addWorkEntry,
   getStepWorkEntries,
   assignItemsToStep,
-  updateStepInventoryStatus
+  updateStepInventoryStatus,
+  getStepAssignedUsers,
+  assignUsersToStep,
+  removeUserFromStep
 };

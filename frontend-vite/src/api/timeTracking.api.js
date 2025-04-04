@@ -47,7 +47,21 @@ const timeTrackingApi = {
 
   getReport: (userIds, startDate, endDate) => {
     return api.post(`${BASE_URL}/report`, { userIds, startDate, endDate });
+  },
+
+  // New method for manual time entry
+  postManualTimeEntry: async ({ guideId, stepId, minutes }) => {
+    return fetch('/api/time-tracking/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guideId, stepId, minutes }),
+    });
   }
+};
+
+export const fetchTimeSummaryForGuide = async (guideId) => {
+  const res = await fetch(`/api/guides/${guideId}/time-summary`);
+  return res.json();
 };
 
 export default timeTrackingApi;
