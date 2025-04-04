@@ -36,18 +36,15 @@ import InventoryItemDetails from './pages/inventory/InventoryItemDetails';
 import InventoryReportPage from './pages/inventory/InventoryReportPage';
 import InventoryTransactionsPage from './pages/inventory/InventoryTransactionsPage';
 import InventoryItemEditPage from './pages/inventory/InventoryItemEditPage';
+
+// Production pages
 import ManualWorkEntryPanel from './pages/production/ManualWorkEntryPanel';
 import ProductionGuidesListPage from './pages/production/ProductionGuidesListPage';
 import CreateProductionGuidePage from './pages/production/CreateProductionGuidePage';
 import ProductionPage from './pages/production/ProductionPage';
 import ProductionGuideDetailsPage from './pages/production/ProductionGuideDetailsPage';
-
-
-
-
-
-
-
+import EditProductionGuidePage from './pages/production/EditProductionGuidePage';
+import ProductionTemplatesPage from './pages/production/ProductionTemplatesPage';
 
 // Time Tracking and Leave routes
 import TimeTrackingPage from './pages/TimeTrackingPage';
@@ -291,6 +288,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              
               {/* Leave Management routes */}
               <Route
                 path="/leave"
@@ -314,108 +312,135 @@ function App() {
                 }
               />
               
+              {/* Inventory routes */}
               <Route
-  path="/inventory"
-  element={
-    <ProtectedRoute requiredPermission={['inventory', 'read']}>
-      <MainLayout>
-        <InventoryPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
+                path="/inventory"
+                element={
+                  <ProtectedRoute requiredPermission={['inventory', 'read']}>
+                    <MainLayout>
+                      <InventoryPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
 
-<Route
-  path="/inventory/items/:id"
-  element={
-    <ProtectedRoute requiredPermission={['inventory', 'read']}>
-      <MainLayout>
-        <InventoryItemDetails />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/inventory/items/edit/:id"
-  element={
-    <ProtectedRoute requiredPermission={['inventory', 'update']}>
-      <MainLayout>
-        <InventoryItemEditPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/inventory/report"
-  element={
-    <ProtectedRoute requiredPermission={['inventory', 'read', 2]}>
-      <MainLayout>
-        <InventoryReportPage key={window.location.pathname + Date.now()} />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
+              <Route
+                path="/inventory/items/:id"
+                element={
+                  <ProtectedRoute requiredPermission={['inventory', 'read']}>
+                    <MainLayout>
+                      <InventoryItemDetails />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
 
-<Route
-  path="/inventory/transactions"
-  element={
-    <ProtectedRoute requiredPermission={['inventory', 'read']}>
-      <MainLayout>
-        <InventoryTransactionsPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/production/guides/:id/manual-work"
-  element={
-    <ProtectedRoute requiredPermission={['production', 'manualWork']}>
-      <MainLayout>
-        <ManualWorkEntryPanel />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/production/guides"
-  element={
-    <ProtectedRoute requiredPermission={['production', 'view']}>
-      <MainLayout>
-        <ProductionGuidesListPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/production/guides/new"
-  element={
-    <ProtectedRoute requiredPermission={['production', 'create']}>
-      <MainLayout>
-        <CreateProductionGuidePage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/production"
-  element={
-    <ProtectedRoute requiredPermission={['production', 'view']}>
-      <MainLayout>
-        <ProductionPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/production/guides/:id"
-  element={
-    <ProtectedRoute requiredPermission={['production', 'view']}>
-      <MainLayout>
-        <ProductionGuideDetailsPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
+              <Route
+                path="/inventory/items/edit/:id"
+                element={
+                  <ProtectedRoute requiredPermission={['inventory', 'update']}>
+                    <MainLayout>
+                      <InventoryItemEditPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/inventory/report"
+                element={
+                  <ProtectedRoute requiredPermission={['inventory', 'read', 2]}>
+                    <MainLayout>
+                      <InventoryReportPage key={window.location.pathname + Date.now()} />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/inventory/transactions"
+                element={
+                  <ProtectedRoute requiredPermission={['inventory', 'read']}>
+                    <MainLayout>
+                      <InventoryTransactionsPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Production routes */}
+              <Route
+                path="/production"
+                element={
+                  <Navigate to="/production/guides" replace />
+                }
+              />
+
+              <Route
+                path="/production/guides"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'view']}>
+                    <MainLayout>
+                      <ProductionGuidesListPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/production/guides/new"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'create']}>
+                    <MainLayout>
+                      <CreateProductionGuidePage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/production/guides/edit/:id"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'update']}>
+                    <MainLayout>
+                      <EditProductionGuidePage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/production/guides/:id"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'view']}>
+                    <MainLayout>
+                      <ProductionGuideDetailsPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/production/guides/:id/manual-work"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'manualWork']}>
+                    <MainLayout>
+                      <ManualWorkEntryPanel />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/production/templates"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'view']}>
+                    <MainLayout>
+                      <ProductionTemplatesPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Redirect root to dashboard */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -40,8 +40,14 @@ model User {
   inventoryTransactions InventoryTransaction[]
   createdInventoryItems InventoryItem[]        @relation("CreatedInventoryItems")
   Attachment            Attachment[]
-  assignedGuides GuideAssignment[]
-
+  assignedGuides        GuideAssignment[]
+  
+  // Relations from the updated schema
+  stepWorkEntries       StepWorkEntry[]
+  guideChangeHistories  GuideChangeHistory[]
+  
+  // OCR relation
+  ocrResults            OcrResult[]
 }
 
 model Role {
@@ -261,7 +267,9 @@ model ProductionGuide {
   title       String
   barcode     String       @unique
   description String?
+  deadline    DateTime?    // Deadline for the production guide
   priority    String       @default("NORMAL") // NORMAL, LOW, HIGH, CRITICAL
+  autoPriority Boolean     @default(false)  // Whether priority is automatically calculated
   attachments Attachment[] @relation("ProductionGuideAttachments")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -269,7 +277,9 @@ model ProductionGuide {
   createdBy   User         @relation("CreatedGuides", fields: [createdById], references: [id])
   status      String       @default("DRAFT") // DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
   assignedUsers GuideAssignment[]
-
+  
+  // New relation to track changes
+  changeHistory GuideChangeHistory[]
 
   // Powiązania
   steps     ProductionStep[]
@@ -280,6 +290,7 @@ model ProductionGuide {
   @@index([createdById])
   @@index([status])
   @@index([priority])
+  @@index([deadline])
 }
 
 model ProductionStep {
@@ -289,15 +300,22 @@ model ProductionStep {
   title          String
   description    String?
   order          Int               @default(0)
-  estimatedTime  Int? // Szacowany czas w minutach
-  actualTime     Int? // Rzeczywisty czas w minutach
+  estimatedTime  Int? // Planned minutes for this step
+  actualTime     Int? // Actual minutes spent (sum of workEntries)
   status         String            @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
-  assignedToRole String? // Rola, której ten krok jest przypisany
+  assignedToRole String? // Role this step is assigned to
   comments       StepComment[]
   workSessions   StepWorkSession[]
   attachments    Attachment[]      @relation("StepAttachments")
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+
+  // Relations
+  workEntries    StepWorkEntry[]   // Individual work entries from users
+  stepInventory  StepInventory[]   // Items needed for this step
+  
+  // OCR relation
+  ocrResults     OcrResult[]
 
   @@index([guideId])
   @@index([status])
@@ -402,6 +420,9 @@ model InventoryItem {
   transactions InventoryTransaction[]
   guideItems   GuideInventory[]
 
+  // Relations
+  stepInventory StepInventory[]
+
   @@index([barcode])
   @@index([createdById])
   @@index([category])
@@ -453,5 +474,72 @@ model GuideAssignment {
 
   @@id([guideId, userId]) // Klucz złożony
   @@index([guideId])
+  @@index([userId])
+}
+
+// Models from the updated schema
+model GuideChangeHistory {
+  id          String       @id @default(cuid())
+  guideId     String
+  guide       ProductionGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  changeType  String       // "CREATE", "UPDATE", "DELETE"
+  fieldName   String       // Which field was changed
+  oldValue    String?      // Previous value (JSON stringified if needed)
+  newValue    String?      // New value (JSON stringified if needed)
+  createdAt   DateTime     @default(now())
+
+  @@index([guideId])
+  @@index([userId])
+}
+
+model StepWorkEntry {
+  id             String       @id @default(cuid())
+  stepId         String
+  step           ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  timeWorked     Int          // Minutes worked
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([stepId])
+  @@index([userId])
+}
+
+model StepInventory {
+  id             String       @id @default(cuid())
+  stepId         String
+  step           ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  itemId         String
+  item           InventoryItem @relation(fields: [itemId], references: [id])
+  quantity       Float        // Quantity needed for this step
+  status         String       @default("NEEDED") // NEEDED, RESERVED, ISSUED
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([stepId])
+  @@index([itemId])
+  @@index([status])
+}
+
+// OCR Result model for storing OCR processed text
+model OcrResult {
+  id             String    @id @default(cuid())
+  filePath       String
+  fileName       String
+  text           String    @db.Text
+  confidence     Float
+  manuallyEdited Boolean   @default(false)
+  stepId         String?
+  step           ProductionStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([stepId])
   @@index([userId])
 }

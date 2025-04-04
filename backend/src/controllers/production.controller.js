@@ -43,35 +43,93 @@ const handleFileUpload = (req, res, next) => {
   });
 };
 
-// Tworzenie nowego przewodnika produkcyjnego
+// Generate a structured barcode for production guides
+const generateProductionBarcode = async () => {
+  const year = new Date().getFullYear();
+  
+  // Get the count of guides for this year to generate sequential number
+  const count = await prisma.productionGuide.count({
+    where: {
+      barcode: {
+        startsWith: `PROD-${year}-`
+      }
+    }
+  });
+  
+  // Format: PROD-YYYY-XXXX (XXXX is sequential padded with zeros)
+  const sequentialNumber = (count + 1).toString().padStart(4, '0');
+  return `PROD-${year}-${sequentialNumber}`;
+};
+
+// Enhanced create production guide function
 const createProductionGuide = async (req, res) => {
   try {
-    const { title, description, priority, barcode } = req.body;
+    const { 
+      title, 
+      description, 
+      priority, 
+      autoPriority,
+      deadline,
+      assignedUsers = []
+    } = req.body;
     
-    // Generuj unikalny kod kreskowy, jeśli nie podano
-    const uniqueBarcode = barcode || await barcodeGenerator.generateUniqueBarcode('prod');
+    // Generate a structured barcode
+    const uniqueBarcode = await generateProductionBarcode();
     
-    // Sprawdź, czy kod kreskowy już istnieje
-    const existingGuide = await prisma.productionGuide.findUnique({
-      where: { barcode: uniqueBarcode }
-    });
-    
-    if (existingGuide) {
-      return res.status(400).json({ message: 'Przewodnik o tym kodzie kreskowym już istnieje' });
-    }
-    
-    // Utwórz nowy przewodnik
+    // Create guide with enhanced fields
     const guide = await prisma.productionGuide.create({
       data: {
         title,
         description,
         priority: priority || 'NORMAL',
+        autoPriority: autoPriority || false,
+        deadline: deadline ? new Date(deadline) : null,
         barcode: uniqueBarcode,
         createdById: req.user.id
       }
     });
     
-    // Obsługa załączników
+    // Log creation in change history
+    await prisma.guideChangeHistory.create({
+      data: {
+        guideId: guide.id,
+        userId: req.user.id,
+        changeType: 'CREATE',
+        fieldName: 'all',
+        newValue: JSON.stringify({
+          title,
+          description,
+          priority,
+          autoPriority,
+          deadline
+        })
+      }
+    });
+    
+    // Assign users if provided
+    if (assignedUsers.length > 0) {
+      const userAssignments = assignedUsers.map(userId => ({
+        userId,
+        guideId: guide.id
+      }));
+      
+      await prisma.guideAssignment.createMany({
+        data: userAssignments
+      });
+      
+      // Send notifications to assigned users
+      for (const userId of assignedUsers) {
+        await sendNotification(
+          req.app.get('io'),
+          prisma,
+          userId,
+          `You have been assigned to a new production guide: ${title}`,
+          `/production/guides/${guide.id}`
+        );
+      }
+    }
+    
+    // Attachments handling code remains the same
     const attachments = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -89,23 +147,32 @@ const createProductionGuide = async (req, res) => {
       }
     }
     
-    // Logowanie audytu
+    // Audit logging
     await logAudit({
       userId: req.user.id,
       action: 'create',
       module: 'production',
       targetId: guide.id,
-      meta: { guide: { title, description, priority, barcode: uniqueBarcode } }
+      meta: { 
+        guide: { 
+          title, 
+          description, 
+          priority, 
+          barcode: uniqueBarcode,
+          deadline: deadline ? new Date(deadline).toISOString() : null,
+          autoPriority: autoPriority || false
+        } 
+      }
     });
     
     res.status(201).json({
       guide,
       attachments,
-      message: 'Przewodnik produkcyjny utworzony pomyślnie'
+      message: 'Production guide created successfully'
     });
   } catch (error) {
-    console.error('Błąd podczas tworzenia przewodnika:', error);
-    res.status(500).json({ message: 'Błąd podczas tworzenia przewodnika produkcyjnego' });
+    console.error('Error creating guide:', error);
+    res.status(500).json({ message: 'Error creating production guide' });
   }
 };
 
@@ -306,117 +373,170 @@ const getProductionGuideById = async (req, res) => {
   }
 };
 
-// Aktualizacja przewodnika produkcyjnego
+// Enhanced update function that tracks changes
 const updateProductionGuide = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, priority, status, barcode } = req.body;
+    const { 
+      title, 
+      description, 
+      priority, 
+      status, 
+      deadline,
+      autoPriority
+    } = req.body;
     
-    // Sprawdź, czy przewodnik istnieje
+    // Check if guide exists
     const existingGuide = await prisma.productionGuide.findUnique({
       where: { id }
     });
     
     if (!existingGuide) {
-      return res.status(404).json({ message: 'Przewodnik produkcyjny nie znaleziony' });
+      return res.status(404).json({ message: 'Production guide not found' });
     }
     
-    // Jeśli podano nowy kod kreskowy, sprawdź czy jest unikalny
-    if (barcode && barcode !== existingGuide.barcode) {
-      const barcodeExists = await prisma.productionGuide.findFirst({
-        where: {
-          barcode,
-          id: { not: id }
-        }
-      });
-      
-      if (barcodeExists) {
-        return res.status(400).json({ message: 'Przewodnik o tym kodzie kreskowym już istnieje' });
-      }
-    }
-    
-    // Przygotuj dane do aktualizacji
+    // Prepare update data
     const updateData = {};
-    if (title) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (priority) updateData.priority = priority;
-    if (status) updateData.status = status;
-    if (barcode) updateData.barcode = barcode;
-    updateData.updatedAt = new Date();
+    const changes = [];
     
-    // Aktualizuj przewodnik
-    const updatedGuide = await prisma.productionGuide.update({
-      where: { id },
-      data: updateData
-    });
+    if (title !== undefined && title !== existingGuide.title) {
+      updateData.title = title;
+      changes.push({
+        fieldName: 'title',
+        oldValue: existingGuide.title,
+        newValue: title
+      });
+    }
     
-    // Obsługa załączników
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        await prisma.attachment.create({
-          data: {
-            filename: file.originalname,
-            path: file.path,
-            size: file.size,
-            mimeType: file.mimetype,
-            productionGuideId: id,
-            createdById: req.user.id
-          }
+    if (description !== undefined && description !== existingGuide.description) {
+      updateData.description = description;
+      changes.push({
+        fieldName: 'description',
+        oldValue: existingGuide.description || '',
+        newValue: description || ''
+      });
+    }
+    
+    if (priority !== undefined && priority !== existingGuide.priority) {
+      updateData.priority = priority;
+      changes.push({
+        fieldName: 'priority',
+        oldValue: existingGuide.priority,
+        newValue: priority
+      });
+    }
+    
+    if (autoPriority !== undefined && autoPriority !== existingGuide.autoPriority) {
+      updateData.autoPriority = autoPriority;
+      changes.push({
+        fieldName: 'autoPriority',
+        oldValue: String(existingGuide.autoPriority),
+        newValue: String(autoPriority)
+      });
+    }
+    
+    if (status !== undefined && status !== existingGuide.status) {
+      updateData.status = status;
+      changes.push({
+        fieldName: 'status',
+        oldValue: existingGuide.status,
+        newValue: status
+      });
+    }
+    
+    if (deadline !== undefined) {
+      const newDeadline = deadline ? new Date(deadline) : null;
+      const oldDeadline = existingGuide.deadline;
+      
+      if ((newDeadline && !oldDeadline) || 
+          (!newDeadline && oldDeadline) ||
+          (newDeadline && oldDeadline && newDeadline.getTime() !== oldDeadline.getTime())) {
+        updateData.deadline = newDeadline;
+        changes.push({
+          fieldName: 'deadline',
+          oldValue: oldDeadline ? oldDeadline.toISOString() : 'null',
+          newValue: newDeadline ? newDeadline.toISOString() : 'null'
         });
       }
     }
     
-    // Logowanie audytu
-    await logAudit({
-      userId: req.user.id,
-      action: 'update',
-      module: 'production',
-      targetId: id,
-      meta: {
-        previousData: {
-          title: existingGuide.title,
-          description: existingGuide.description,
-          priority: existingGuide.priority,
-          status: existingGuide.status,
-          barcode: existingGuide.barcode
-        },
-        updatedData: updateData
-      }
-    });
-    
-    // Powiadomienie jeśli zmieniono status
-    if (status && status !== existingGuide.status) {
-      // Pobierz użytkowników przypisanych do kroków tego przewodnika
-      const usersInvolvedInSteps = await prisma.stepWorkSession.findMany({
-        where: {
-          step: {
-            guideId: id
-          }
-        },
-        select: {
-          userId: true
-        },
-        distinct: ['userId']
+    // Only update if there are changes
+    if (Object.keys(updateData).length > 0) {
+      updateData.updatedAt = new Date();
+      
+      // Update guide
+      const updatedGuide = await prisma.productionGuide.update({
+        where: { id },
+        data: updateData
       });
       
-      const userIds = [...new Set(usersInvolvedInSteps.map(session => session.userId))];
-      
-      // Wyślij powiadomienia
-      for (const userId of userIds) {
-        const content = `Status przewodnika "${updatedGuide.title}" został zmieniony na ${status}`;
-        const link = `/production/guides/${id}`;
-        
-        await sendNotification(req.app.get('io'), prisma, userId, content, link);
+      // Record all changes in history
+      for (const change of changes) {
+        await prisma.guideChangeHistory.create({
+          data: {
+            guideId: id,
+            userId: req.user.id,
+            changeType: 'UPDATE',
+            fieldName: change.fieldName,
+            oldValue: change.oldValue,
+            newValue: change.newValue
+          }
+        });
       }
+      
+      // Audit logging
+      await logAudit({
+        userId: req.user.id,
+        action: 'update',
+        module: 'production',
+        targetId: id,
+        meta: {
+          changes,
+          previousData: {
+            title: existingGuide.title,
+            description: existingGuide.description,
+            priority: existingGuide.priority,
+            status: existingGuide.status,
+            deadline: existingGuide.deadline,
+            autoPriority: existingGuide.autoPriority
+          },
+          updatedData: updateData
+        }
+      });
+      
+      // Notification for status change
+      if (status && status !== existingGuide.status) {
+        // Get all users assigned to this guide
+        const assignments = await prisma.guideAssignment.findMany({
+          where: { guideId: id },
+          select: { userId: true }
+        });
+        
+        // Send notifications about status change
+        for (const assignment of assignments) {
+          await sendNotification(
+            req.app.get('io'),
+            prisma,
+            assignment.userId,
+            `Production guide "${updatedGuide.title}" status changed to ${status}`,
+            `/production/guides/${id}`
+          );
+        }
+      }
+      
+      res.json({
+        guide: updatedGuide,
+        message: 'Production guide updated successfully'
+      });
+    } else {
+      res.json({
+        guide: existingGuide,
+        message: 'No changes to update'
+      });
     }
-    
-    res.json({
-      guide: updatedGuide,
-      message: 'Przewodnik produkcyjny zaktualizowany pomyślnie'
-    });
   } catch (error) {
-    console.error('Błąd podczas aktualizacji przewodnika:', error);
-    res.status(500).json({ message: 'Błąd podczas aktualizacji przewodnika produkcyjnego' });
+    console.error('Error updating guide:', error);
+    res.status(500).json({ message: 'Error updating production guide' });
   }
 };
 
@@ -554,6 +674,58 @@ const deleteAttachment = async (req, res) => {
   } catch (error) {
     console.error('Błąd podczas usuwania załącznika:', error);
     res.status(500).json({ message: 'Błąd podczas usuwania załącznika' });
+  }
+};
+
+// Get change history for a guide
+const getGuideChangeHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    // Get change history with pagination
+    const [changes, total] = await Promise.all([
+      prisma.guideChangeHistory.findMany({
+        where: { guideId: id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      }),
+      prisma.guideChangeHistory.count({ where: { guideId: id } })
+    ]);
+    
+    res.json({
+      changes,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error getting guide history:', error);
+    res.status(500).json({ message: 'Error retrieving guide change history' });
   }
 };
 
@@ -1102,335 +1274,454 @@ const endWorkOnStep = async (req, res) => {
   }
 };
 
-// backend/src/controllers/production.controller.js
-// (dodaj gdzieś pod koniec pliku lub obok endWorkOnStep)
-
-const addManualWorkEntry = async (req, res) => {
+// Add a work entry to a step (manual time input)
+const addWorkEntry = async (req, res) => {
   try {
-    const { id: guideId } = req.params;
-    const { durationMinutes, note } = req.body;
+    const { id: stepId } = req.params;
+    const { timeWorked, notes } = req.body;
     const userId = req.user.id;
-
-    if (!durationMinutes || durationMinutes <= 0) {
-      return res.status(400).json({ message: 'Czas musi być większy od 0 minut' });
+    
+    // Validate time worked
+    if (!timeWorked || parseInt(timeWorked) <= 0) {
+      return res.status(400).json({ message: 'Time worked must be a positive number' });
     }
-
-    // Sprawdzenie czy przewodnik istnieje
-    const guide = await prisma.productionGuide.findUnique({
-      where: { id: guideId },
+    
+    // Check if step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId },
       include: {
-        steps: true,
-        assignedUsers: true
+        guide: true
       }
     });
-
-    if (!guide) {
-      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
-    }
-
-    // Sprawdzenie czy user jest przypisany lub ma uprawnienie
-    const isAssigned = guide.assignedUsers.some(a => a.userId === userId);
-    const isManager = req.user.permissions['production.manageAll'];
-
-    if (!isAssigned && !isManager) {
-      return res.status(403).json({ message: 'Nie jesteś przypisany do przewodnika' });
-    }
-
-    // Obliczenie limitu czasu
-    const estimatedTotal = guide.steps.reduce((sum, s) => sum + (s.estimatedTime || 0), 0);
-
-    const usedTotal = await prisma.stepWorkSession.aggregate({
-      where: {
-        step: { guideId },
-      },
-      _sum: { duration: true }
-    });
-
-    const usedMinutes = Math.floor((usedTotal._sum.duration || 0) / 60);
-
-    if ((usedMinutes + durationMinutes) > estimatedTotal) {
-      return res.status(400).json({
-        message: `Limit czasu dla przewodnika przekroczony. Dostępne: ${estimatedTotal - usedMinutes} min.`
-      });
-    }
-
-    // Znajdź pierwszy niezakonczony krok
-    const step = guide.steps.find(s => s.status !== 'COMPLETED');
+    
     if (!step) {
-      return res.status(400).json({ message: 'Wszystkie kroki są ukończone' });
+      return res.status(404).json({ message: 'Step not found' });
     }
-
-    const durationSeconds = durationMinutes * 60;
-
-    const session = await prisma.stepWorkSession.create({
+    
+    // Ensure the step is in progress
+    if (step.status === 'COMPLETED') {
+      return res.status(400).json({ message: 'Cannot add work to a completed step' });
+    }
+    
+    if (step.status === 'PENDING') {
+      // Update step status to in progress
+      await prisma.productionStep.update({
+        where: { id: stepId },
+        data: { status: 'IN_PROGRESS' }
+      });
+      
+      // Update guide status if needed
+      if (step.guide.status === 'DRAFT') {
+        await prisma.productionGuide.update({
+          where: { id: step.guideId },
+          data: { status: 'IN_PROGRESS' }
+        });
+      }
+    }
+    
+    // Create the work entry
+    const workEntry = await prisma.stepWorkEntry.create({
       data: {
-        stepId: step.id,
+        stepId,
         userId,
-        duration: durationSeconds,
-        startTime: new Date(),
-        endTime: new Date(),
-        note
+        timeWorked: parseInt(timeWorked),
+        notes
       }
     });
-
-    // Sprawdzenie czy należy zakończyć przewodnik
-    const newUsedMinutes = usedMinutes + durationMinutes;
-    if (newUsedMinutes >= estimatedTotal) {
-      await prisma.productionGuide.update({
-        where: { id: guideId },
-        data: { status: 'COMPLETED' }
-      });
-    }
-
-    // Loguj audyt
+    
+    // Update the step's actual time (total time worked)
+    const totalWorked = await prisma.stepWorkEntry.aggregate({
+      where: { stepId },
+      _sum: { timeWorked: true }
+    });
+    
+    await prisma.productionStep.update({
+      where: { id: stepId },
+      data: { 
+        actualTime: totalWorked._sum.timeWorked,
+        // If we've met or exceeded the estimated time, update status
+        status: step.estimatedTime && totalWorked._sum.timeWorked >= step.estimatedTime 
+          ? 'COMPLETED' 
+          : 'IN_PROGRESS'
+      }
+    });
+    
+    // Audit logging
     await logAudit({
       userId,
-      action: 'manualWork',
-      module: 'production',
-      targetId: guideId,
+      action: 'create',
+      module: 'stepWork',
+      targetId: workEntry.id,
       meta: {
-        durationMinutes,
-        note,
-        stepId: step.id,
-        guideTitle: guide.title
+        stepId,
+        guideId: step.guideId,
+        timeWorked: parseInt(timeWorked),
+        totalWorked: totalWorked._sum.timeWorked
       }
     });
-
-    // Powiadomienie (np. socket)
-    const content = `Dodano wpis pracy manualnej dla przewodnika "${guide.title}" (${durationMinutes} min)`;
-    const link = `/production/guides/${guideId}`;
-    await sendNotification(req.app.get('io'), prisma, userId, content, link);
-
+    
     res.status(201).json({
-      session,
-      message: 'Czas pracy zapisany pomyślnie'
+      workEntry,
+      totalWorked: totalWorked._sum.timeWorked,
+      message: 'Work entry added successfully'
     });
   } catch (error) {
-    console.error('Błąd przy dodawaniu pracy manualnej:', error);
-    res.status(500).json({ message: 'Błąd serwera podczas dodawania pracy' });
+    console.error('Error adding work entry:', error);
+    res.status(500).json({ message: 'Error adding work entry' });
   }
 };
 
-module.exports = {
-  // ... inne eksporty
-  addManualWorkEntry
-};
-
-// Przypisywanie użytkownika do przewodnika
-const assignUserToGuide = async (req, res) => {
+// Get all work entries for a step
+const getStepWorkEntries = async (req, res) => {
   try {
-    const { id: guideId } = req.params;
-    const { userId } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ message: "Brakuje pola userId" });
-    }
-
-    // Sprawdź czy przewodnik istnieje
-    const guide = await prisma.productionGuide.findUnique({ where: { id: guideId } });
-    if (!guide) {
-      return res.status(404).json({ message: "Przewodnik nie istnieje" });
-    }
-
-    // Sprawdź czy użytkownik istnieje
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return res.status(404).json({ message: "Użytkownik nie istnieje" });
-    }
-
-    // Sprawdź czy już przypisany
-    const exists = await prisma.guideAssignment.findUnique({
-      where: { guideId_userId: { guideId, userId } }
-    });
-    if (exists) {
-      return res.status(400).json({ message: "Użytkownik już przypisany do przewodnika" });
-    }
-
-    // Przypisz
-    const assignment = await prisma.guideAssignment.create({
-      data: { guideId, userId }
-    });
-
-    // Log audytu
-    await logAudit({
-      userId: req.user.id,
-      action: "assign",
-      module: "production",
-      targetId: guideId,
-      meta: {
-        assignedUser: {
-          id: user.id,
-          name: `${user.firstName} ${user.lastName}`
-        }
-      }
-    });
-//Notyfikacja
-await sendNotification(
-  req.app.get('io'),
-  prisma,
-  user.id,
-  `Zostałeś przypisany do przewodnika "${guide.title}"`,
-  `/production/guides/${guide.id}`
-);
-
-    // Możesz tu dodać też powiadomienie jak chcesz
-
-    res.status(201).json({
-      assignment,
-      message: `Użytkownik ${user.firstName} ${user.lastName} przypisany do przewodnika`
-    });
-  } catch (error) {
-    console.error("❌ Błąd przypisywania użytkownika:", error);
-    res.status(500).json({ message: "Błąd serwera podczas przypisywania użytkownika" });
-  }
-};
-
-//GetAssignedUsers
-const getAssignedUsers = async (req, res) => {
-  try {
-    const { id: guideId } = req.params;
-
-    // Sprawdź, czy przewodnik istnieje
-    const guide = await prisma.productionGuide.findUnique({
-      where: { id: guideId },
+    const { id: stepId } = req.params;
+    
+    const entries = await prisma.stepWorkEntry.findMany({
+      where: { stepId },
       include: {
-        assignedUsers: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                login: true,
-              }
-            }
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
           }
         }
-      }
+      },
+      orderBy: { createdAt: 'desc' }
     });
-
-    if (!guide) {
-      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
-    }
-
-    const users = guide.assignedUsers.map(a => a.user);
-
-    res.json({ users });
+    
+    // Calculate totals by user
+    const userTotals = {};
+    entries.forEach(entry => {
+      const userId = entry.userId;
+      if (!userTotals[userId]) {
+        userTotals[userId] = {
+          userId,
+          firstName: entry.user.firstName,
+          lastName: entry.user.lastName,
+          totalTime: 0,
+          entryCount: 0
+        };
+      }
+      userTotals[userId].totalTime += entry.timeWorked;
+      userTotals[userId].entryCount += 1;
+    });
+    
+    res.json({
+      entries,
+      userTotals: Object.values(userTotals),
+      totalTime: entries.reduce((sum, entry) => sum + entry.timeWorked, 0)
+    });
   } catch (error) {
-    console.error('❌ Błąd pobierania przypisanych użytkowników:', error);
-    res.status(500).json({ message: 'Błąd serwera podczas pobierania przypisanych użytkowników' });
+    console.error('Error getting work entries:', error);
+    res.status(500).json({ message: 'Error retrieving work entries' });
   }
 };
 
-//Dodawanie kilku użytkowników do przewodnika
-const assignMultipleUsersToGuide = async (req, res) => {
+// Associate inventory items with a specific step
+const assignItemsToStep = async (req, res) => {
   try {
-    const { id: guideId } = req.params;
-    const { userIds } = req.body;
-
-    if (!Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({ message: 'Wymagana lista userIds (tablica)' });
+    const { id: stepId } = req.params;
+    const { items } = req.body;
+    
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Invalid items array' });
     }
-
-    const guide = await prisma.productionGuide.findUnique({ where: { id: guideId } });
-    if (!guide) {
-      return res.status(404).json({ message: 'Przewodnik nie istnieje' });
+    
+    // Verify the step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId },
+      include: { guide: true }
+    });
+    
+    if (!step) {
+      return res.status(404).json({ message: 'Step not found' });
     }
-
-    const validUsers = await prisma.user.findMany({
-      where: {
-        id: { in: userIds }
+    
+    const results = [];
+    const errors = [];
+    
+    // Process each item
+    for (const item of items) {
+      const { itemId, quantity } = item;
+      
+      if (!itemId || !quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
+        errors.push({ itemId, error: 'Invalid item ID or quantity' });
+        continue;
+      }
+      
+      try {
+        // Check if the item exists
+        const inventoryItem = await prisma.inventoryItem.findUnique({
+          where: { id: itemId }
+        });
+        
+        if (!inventoryItem) {
+          errors.push({ itemId, error: 'Item not found' });
+          continue;
+        }
+        
+        // Check if already assigned to this step
+        const existingAssignment = await prisma.stepInventory.findFirst({
+          where: {
+            stepId,
+            itemId
+          }
+        });
+        
+        if (existingAssignment) {
+          // Update existing assignment
+          const updated = await prisma.stepInventory.update({
+            where: { id: existingAssignment.id },
+            data: {
+              quantity: parseFloat(quantity),
+              status: 'NEEDED'
+            }
+          });
+          
+          results.push({
+            ...updated,
+            item: {
+              id: inventoryItem.id,
+              name: inventoryItem.name,
+              unit: inventoryItem.unit
+            }
+          });
+        } else {
+          // Create new assignment
+          const created = await prisma.stepInventory.create({
+            data: {
+              stepId,
+              itemId,
+              quantity: parseFloat(quantity),
+              status: 'NEEDED'
+            }
+          });
+          
+          results.push({
+            ...created,
+            item: {
+              id: inventoryItem.id,
+              name: inventoryItem.name,
+              unit: inventoryItem.unit
+            }
+          });
+        }
+        
+        // Notify warehouse staff
+        const warehouseStaff = await prisma.userRole.findMany({
+          where: {
+            role: {
+              name: "Warehouseman"
+            }
+          },
+          select: {
+            userId: true
+          }
+        });
+        
+        if (warehouseStaff.length > 0) {
+          for (const staff of warehouseStaff) {
+            await sendNotification(
+              req.app.get('io'),
+              prisma,
+              staff.userId,
+              `New item required for production: ${quantity} ${inventoryItem.unit} of ${inventoryItem.name}`,
+              `/production/guides/${step.guideId}/steps/${stepId}`
+            );
+          }
+        }
+        
+      } catch (error) {
+        console.error(`Error processing item ${itemId}:`, error);
+        errors.push({ itemId, error: error.message });
+      }
+    }
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: 'assign',
+      module: 'stepInventory',
+      targetId: stepId,
+      meta: {
+        guideId: step.guideId,
+        stepId,
+        items: results.map(r => ({
+          itemId: r.itemId,
+          quantity: r.quantity
+        }))
       }
     });
-
-    const alreadyAssigned = await prisma.guideAssignment.findMany({
-      where: {
-        guideId,
-        userId: { in: userIds }
-      },
-      select: { userId: true }
+    
+    res.json({
+      success: errors.length === 0,
+      results,
+      errors,
+      message: `${results.length} items assigned to step, ${errors.length} errors`
     });
+  } catch (error) {
+    console.error('Error assigning items to step:', error);
+    res.status(500).json({ message: 'Error assigning inventory items to step' });
+  }
+};
 
-    const alreadyAssignedIds = new Set(alreadyAssigned.map(a => a.userId));
-
-    const toAssign = validUsers.filter(user => !alreadyAssignedIds.has(user.id));
-
-    // Transakcja do utworzenia przypisań
-    await prisma.$transaction([
-      ...toAssign.map(user =>
-        prisma.guideAssignment.create({
-          data: { guideId, userId: user.id }
-        })
-      ),
-      ...toAssign.map(user =>
-        sendNotification(
+// Update the status of inventory assigned to a step
+const updateStepInventoryStatus = async (req, res) => {
+  try {
+    const { id: stepInventoryId } = req.params;
+    const { status } = req.body;
+    
+    if (!['NEEDED', 'RESERVED', 'ISSUED'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Must be NEEDED, RESERVED, or ISSUED' });
+    }
+    
+    // Find the existing assignment
+    const stepInventory = await prisma.stepInventory.findUnique({
+      where: { id: stepInventoryId },
+      include: {
+        step: {
+          include: {
+            guide: true
+          }
+        },
+        item: true
+      }
+    });
+    
+    if (!stepInventory) {
+      return res.status(404).json({ message: 'Step inventory assignment not found' });
+    }
+    
+    // Update the status
+    const previousStatus = stepInventory.status;
+    const updated = await prisma.stepInventory.update({
+      where: { id: stepInventoryId },
+      data: { status }
+    });
+    
+    // If reserving or issuing, update inventory item's reservation
+    if (status !== previousStatus) {
+      if (status === 'RESERVED' && previousStatus !== 'RESERVED') {
+        // Create inventory transaction for reservation
+        await prisma.inventoryTransaction.create({
+          data: {
+            itemId: stepInventory.itemId,
+            quantity: -stepInventory.quantity, // Negative for reservation
+            type: 'RESERVE',
+            reason: `Reserved for step "${stepInventory.step.title}" in guide "${stepInventory.step.guide.title}"`,
+            guideId: stepInventory.step.guideId,
+            userId: req.user.id
+          }
+        });
+      } else if (previousStatus === 'RESERVED' && status !== 'RESERVED') {
+        // Release reservation if changing from reserved to another status
+        await prisma.inventoryTransaction.create({
+          data: {
+            itemId: stepInventory.itemId,
+            quantity: stepInventory.quantity, // Positive for release
+            type: 'RELEASE',
+            reason: `Released reservation for step "${stepInventory.step.title}" in guide "${stepInventory.step.guide.title}"`,
+            guideId: stepInventory.step.guideId,
+            userId: req.user.id
+          }
+        });
+      }
+      
+      if (status === 'ISSUED' && previousStatus !== 'ISSUED') {
+        // Remove from inventory when issuing
+        await prisma.inventoryTransaction.create({
+          data: {
+            itemId: stepInventory.itemId,
+            quantity: -stepInventory.quantity, // Negative for removal
+            type: 'REMOVE',
+            reason: `Issued for step "${stepInventory.step.title}" in guide "${stepInventory.step.guide.title}"`,
+            guideId: stepInventory.step.guideId,
+            userId: req.user.id
+          }
+        });
+        
+        // Update inventory quantity
+        await prisma.inventoryItem.update({
+          where: { id: stepInventory.itemId },
+          data: {
+            quantity: {
+              decrement: stepInventory.quantity
+            }
+          }
+        });
+      }
+      
+      // Notify assigned users about item status change
+      const stepAssignments = await prisma.guideAssignment.findMany({
+        where: { guideId: stepInventory.step.guideId },
+        select: { userId: true }
+      });
+      
+      for (const assignment of stepAssignments) {
+        await sendNotification(
           req.app.get('io'),
           prisma,
-          user.id,
-          `Zostałeś przypisany do przewodnika "${guide.title}"`,
-          `/production/guides/${guide.id}`
-        )
-      ),
-      logAudit({
-        userId: req.user.id,
-        action: 'assign-multiple',
-        module: 'production',
-        targetId: guideId,
-        meta: {
-          assignedUserIds: toAssign.map(u => u.id),
-          totalAssigned: toAssign.length
+          assignment.userId,
+          `Inventory status changed: ${stepInventory.item.name} is now ${status} for step "${stepInventory.step.title}"`,
+          `/production/guides/${stepInventory.step.guideId}/steps/${stepInventory.step.id}`
+        );
+      }
+    }
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      module: 'stepInventory',
+      targetId: stepInventoryId,
+      meta: {
+        previousStatus,
+        newStatus: status,
+        item: {
+          id: stepInventory.itemId,
+          name: stepInventory.item.name
+        },
+        step: {
+          id: stepInventory.stepId,
+          title: stepInventory.step.title
+        },
+        guide: {
+          id: stepInventory.step.guideId,
+          title: stepInventory.step.guide.title
         }
-      })
-    ]);
-
-    res.status(201).json({
-      message: `Przypisano ${toAssign.length} użytkowników do przewodnika`,
-      assignedUserIds: toAssign.map(u => u.id)
+      }
+    });
+    
+    res.json({
+      stepInventory: updated,
+      message: `Status updated to ${status}`
     });
   } catch (error) {
-    console.error('❌ Błąd masowego przypisywania:', error);
-    res.status(500).json({ message: 'Błąd serwera podczas przypisywania wielu użytkowników' });
+    console.error('Error updating step inventory status:', error);
+    res.status(500).json({ message: 'Error updating inventory status' });
   }
 };
 
-
-// ✅ Usuń przypisanie użytkownika z przewodnika
-const removeUserFromGuide = async (req, res) => {
-  try {
-    const { id: guideId, userId } = req.params;
-
-    await prisma.guideAssignment.delete({
-      where: { guideId_userId: { guideId, userId } }
-    });
-
-    res.json({ message: 'Użytkownik usunięty z przewodnika' });
-  } catch (error) {
-    console.error('Błąd usuwania przypisania:', error);
-    res.status(500).json({ message: 'Błąd usuwania przypisania użytkownika' });
-  }
-};
-
-
-// Dodawanie komentarza do kroku
+// Add a comment to a step
 const addStepComment = async (req, res) => {
   try {
     const { id } = req.params;
     const { content, recipients } = req.body;
     
-    // Sprawdź, czy krok istnieje
+    // Check if step exists
     const step = await prisma.productionStep.findUnique({
       where: { id },
       include: { guide: true }
     });
     
     if (!step) {
-      return res.status(404).json({ message: 'Krok produkcyjny nie znaleziony' });
+      return res.status(404).json({ message: 'Production step not found' });
     }
     
-    // Dodaj komentarz w transakcji
+    // Create comment in a transaction
     const comment = await prisma.$transaction(async (tx) => {
-      // Utwórz komentarz
+      // Create comment
       const newComment = await tx.stepComment.create({
         data: {
           stepId: id,
@@ -1439,7 +1730,7 @@ const addStepComment = async (req, res) => {
         }
       });
       
-      // Dodaj odbiorców, jeśli zostali określeni
+      // Add recipients if specified
       if (recipients && recipients.length > 0) {
         for (const userId of recipients) {
           await tx.commentRecipient.create({
@@ -1451,7 +1742,7 @@ const addStepComment = async (req, res) => {
         }
       }
       
-      // Dodaj załączniki, jeśli są
+      // Add attachments if present
       if (req.files && req.files.length > 0) {
         for (const file of req.files) {
           await tx.attachment.create({
@@ -1470,7 +1761,7 @@ const addStepComment = async (req, res) => {
       return newComment;
     });
     
-    // Logowanie audytu
+    // Audit logging
     await logAudit({
       userId: req.user.id,
       action: 'create',
@@ -1485,11 +1776,11 @@ const addStepComment = async (req, res) => {
       }
     });
     
-    // Wyślij powiadomienia do odbiorców
+    // Send notifications to recipients
     if (recipients && recipients.length > 0) {
       for (const userId of recipients) {
-        if (userId !== req.user.id) { // Nie wysyłaj do osoby, która dodaje komentarz
-          const content = `Nowy komentarz w kroku "${step.title}" w przewodniku "${step.guide.title}"`;
+        if (userId !== req.user.id) { // Don't notify the comment author
+          const content = `New comment in step "${step.title}" in guide "${step.guide.title}"`;
           const link = `/production/guides/${step.guideId}`;
           
           await sendNotification(req.app.get('io'), prisma, userId, content, link);
@@ -1497,7 +1788,7 @@ const addStepComment = async (req, res) => {
       }
     }
     
-    // Pobierz pełne dane komentarza
+    // Get complete comment data
     const fullComment = await prisma.stepComment.findUnique({
       where: { id: comment.id },
       include: {
@@ -1525,11 +1816,503 @@ const addStepComment = async (req, res) => {
     
     res.status(201).json({
       comment: fullComment,
-      message: 'Komentarz dodany pomyślnie'
+      message: 'Comment added successfully'
     });
   } catch (error) {
-    console.error('Błąd podczas dodawania komentarza:', error);
-    res.status(500).json({ message: 'Błąd podczas dodawania komentarza' });
+    console.error('Error adding comment:', error);
+    res.status(500).json({ message: 'Error adding comment to step' });
+  }
+};
+
+// Assign a user to a guide
+const assignUserToGuide = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "Missing userId field" });
+    }
+
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({ 
+      where: { id: guideId } 
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: "Production guide not found" });
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({ 
+      where: { id: userId } 
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if already assigned
+    const existingAssignment = await prisma.guideAssignment.findUnique({
+      where: { 
+        guideId_userId: { 
+          guideId, 
+          userId 
+        } 
+      }
+    });
+    
+    if (existingAssignment) {
+      return res.status(400).json({ message: "User already assigned to this guide" });
+    }
+
+    // Create assignment
+    const assignment = await prisma.guideAssignment.create({
+      data: { 
+        guideId, 
+        userId 
+      }
+    });
+
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: "assign",
+      module: "production",
+      targetId: guideId,
+      meta: {
+        assignedUser: {
+          id: user.id,
+          name: `${user.firstName} ${user.lastName}`
+        }
+      }
+    });
+
+    // Send notification to assigned user
+    await sendNotification(
+      req.app.get('io'),
+      prisma,
+      user.id,
+      `You have been assigned to production guide "${guide.title}"`,
+      `/production/guides/${guide.id}`
+    );
+
+    res.status(201).json({
+      assignment,
+      message: `User ${user.firstName} ${user.lastName} assigned to guide successfully`
+    });
+  } catch (error) {
+    console.error("Error assigning user:", error);
+    res.status(500).json({ message: "Error assigning user to guide" });
+  }
+};
+
+// Remove a user assignment from a guide
+const removeUserFromGuide = async (req, res) => {
+  try {
+    const { id: guideId, userId } = req.params;
+
+    // Check if the assignment exists
+    const assignment = await prisma.guideAssignment.findUnique({
+      where: {
+        guideId_userId: {
+          guideId,
+          userId
+        }
+      }
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ message: "User assignment not found" });
+    }
+
+    // Get user and guide info for notification and logging
+    const [user, guide] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true
+        }
+      }),
+      prisma.productionGuide.findUnique({
+        where: { id: guideId },
+        select: {
+          id: true,
+          title: true
+        }
+      })
+    ]);
+
+    // Delete the assignment
+    await prisma.guideAssignment.delete({
+      where: {
+        guideId_userId: {
+          guideId,
+          userId
+        }
+      }
+    });
+
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: "unassign",
+      module: "production",
+      targetId: guideId,
+      meta: {
+        removedUser: {
+          id: userId,
+          name: user ? `${user.firstName} ${user.lastName}` : 'Unknown user'
+        },
+        guide: {
+          id: guideId,
+          title: guide ? guide.title : 'Unknown guide'
+        }
+      }
+    });
+
+    // Notify user if they exist
+    if (user && guide) {
+      await sendNotification(
+        req.app.get('io'),
+        prisma,
+        userId,
+        `You have been removed from production guide "${guide.title}"`,
+        '/production/guides'
+      );
+    }
+
+    res.json({ 
+      message: "User assignment removed successfully" 
+    });
+  } catch (error) {
+    console.error("Error removing user assignment:", error);
+    res.status(500).json({ message: "Error removing user from guide" });
+  }
+};
+
+// Get all users assigned to a guide
+const getAssignedUsers = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        assignedUsers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                login: true,
+                userRoles: {
+                  include: {
+                    role: {
+                      select: {
+                        id: true,
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+
+    // Format user data with roles
+    const users = guide.assignedUsers.map(assignment => {
+      const { user } = assignment;
+      return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        login: user.login,
+        roles: user.userRoles.map(ur => ({
+          id: ur.role.id,
+          name: ur.role.name
+        }))
+      };
+    });
+
+    res.json({ users });
+  } catch (error) {
+    console.error('Error getting assigned users:', error);
+    res.status(500).json({ message: 'Error retrieving assigned users' });
+  }
+};
+
+// Assign multiple users to a guide
+const assignMultipleUsersToGuide = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds must be a non-empty array' });
+    }
+
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+
+    // Get valid users
+    const users = await prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+        isActive: true
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true
+      }
+    });
+
+    // Find already assigned users
+    const existingAssignments = await prisma.guideAssignment.findMany({
+      where: {
+        guideId,
+        userId: { in: userIds }
+      },
+      select: { userId: true }
+    });
+
+    const alreadyAssignedIds = new Set(existingAssignments.map(a => a.userId));
+    const usersToAssign = users.filter(user => !alreadyAssignedIds.has(user.id));
+    
+    if (usersToAssign.length === 0) {
+      return res.status(200).json({ 
+        message: 'All users are already assigned to this guide',
+        assignedCount: 0,
+        skippedCount: userIds.length
+      });
+    }
+
+    // Create new assignments in a transaction
+    const results = await prisma.$transaction(async (tx) => {
+      const assignments = [];
+      const notifications = [];
+      
+      // Create assignments
+      for (const user of usersToAssign) {
+        const assignment = await tx.guideAssignment.create({
+          data: {
+            guideId,
+            userId: user.id
+          }
+        });
+        assignments.push(assignment);
+        
+        // Create notification
+        const notification = await tx.notification.create({
+          data: {
+            userId: user.id,
+            content: `You have been assigned to production guide "${guide.title}"`,
+            link: `/production/guides/${guideId}`,
+            type: 'SYSTEM',
+            createdById: req.user.id
+          }
+        });
+        notifications.push({ userId: user.id, notification });
+      }
+      
+      return { assignments, notifications };
+    });
+    
+    // Send notifications
+    const io = req.app.get('io');
+    for (const item of results.notifications) {
+      io.to(`user:${item.userId}`).emit(`notification:${item.userId}`, item.notification);
+    }
+    
+    // Log audit entry
+    await logAudit({
+      userId: req.user.id,
+      action: 'assign-multiple',
+      module: 'production',
+      targetId: guideId,
+      meta: {
+        guide: {
+          id: guideId,
+          title: guide.title
+        },
+        assignedUsers: usersToAssign.map(u => ({
+          id: u.id,
+          name: `${u.firstName} ${u.lastName}`
+        })),
+        assignedCount: usersToAssign.length,
+        skippedCount: userIds.length - usersToAssign.length
+      }
+    });
+    
+    res.json({
+      message: `${usersToAssign.length} users assigned to the guide`,
+      assignedCount: usersToAssign.length,
+      skippedCount: userIds.length - usersToAssign.length,
+      assignedUsers: usersToAssign.map(u => ({
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`
+      }))
+    });
+  } catch (error) {
+    console.error('Error assigning multiple users:', error);
+    res.status(500).json({ message: 'Error assigning users to guide' });
+  }
+};
+
+// Add manual work entry to a guide
+const addManualWorkEntry = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    const { durationMinutes, note } = req.body;
+    const userId = req.user.id;
+
+    if (!durationMinutes || durationMinutes <= 0) {
+      return res.status(400).json({ message: 'Duration must be greater than 0 minutes' });
+    }
+
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        steps: true,
+        assignedUsers: true
+      }
+    });
+
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+
+    // Check if user is assigned or has permission
+    const isAssigned = guide.assignedUsers.some(a => a.userId === userId);
+    const isManager = req.user.permissions['production.manageAll'];
+
+    if (!isAssigned && !isManager) {
+      return res.status(403).json({ message: 'You are not assigned to this guide' });
+    }
+
+    // Calculate time limits
+    const estimatedTotal = guide.steps.reduce((sum, s) => sum + (s.estimatedTime || 0), 0);
+
+    const usedTotal = await prisma.stepWorkEntry.aggregate({
+      where: {
+        step: { guideId },
+      },
+      _sum: { timeWorked: true }
+    });
+
+    const usedMinutes = usedTotal._sum.timeWorked || 0;
+
+    if ((usedMinutes + durationMinutes) > estimatedTotal && estimatedTotal > 0) {
+      return res.status(400).json({
+        message: `Time limit for this guide exceeded. Available: ${Math.max(0, estimatedTotal - usedMinutes)} min.`,
+        estimatedTotal,
+        usedMinutes,
+        requestedMinutes: durationMinutes,
+        availableMinutes: Math.max(0, estimatedTotal - usedMinutes)
+      });
+    }
+
+    // Find first incomplete step or use the first step
+    const step = guide.steps.find(s => s.status !== 'COMPLETED') || guide.steps[0];
+    
+    if (!step) {
+      return res.status(400).json({ message: 'No steps available for work entry' });
+    }
+
+    // Create the work entry
+    const workEntry = await prisma.stepWorkEntry.create({
+      data: {
+        stepId: step.id,
+        userId,
+        timeWorked: durationMinutes,
+        notes: note
+      }
+    });
+
+    // Update step's actual time
+    const totalWorked = await prisma.stepWorkEntry.aggregate({
+      where: { stepId: step.id },
+      _sum: { timeWorked: true }
+    });
+
+    await prisma.productionStep.update({
+      where: { id: step.id },
+      data: { 
+        actualTime: totalWorked._sum.timeWorked,
+        status: step.estimatedTime && totalWorked._sum.timeWorked >= step.estimatedTime 
+          ? 'COMPLETED' 
+          : 'IN_PROGRESS'
+      }
+    });
+
+    // Check if guide should be completed
+    const newUsedMinutes = usedMinutes + durationMinutes;
+    if (newUsedMinutes >= estimatedTotal && estimatedTotal > 0) {
+      await prisma.productionGuide.update({
+        where: { id: guideId },
+        data: { status: 'COMPLETED' }
+      });
+    } else if (guide.status === 'DRAFT') {
+      await prisma.productionGuide.update({
+        where: { id: guideId },
+        data: { status: 'IN_PROGRESS' }
+      });
+    }
+
+    // Audit logging
+    await logAudit({
+      userId,
+      action: 'manualWork',
+      module: 'production',
+      targetId: guideId,
+      meta: {
+        durationMinutes,
+        note,
+        stepId: step.id,
+        guideTitle: guide.title
+      }
+    });
+
+    // Notification for guide creator
+    if (guide.createdById !== userId) {
+      const content = `Manual work time added to guide "${guide.title}" (${durationMinutes} min)`;
+      const link = `/production/guides/${guideId}`;
+      await sendNotification(req.app.get('io'), prisma, guide.createdById, content, link);
+    }
+
+    res.status(201).json({
+      workEntry,
+      step: {
+        id: step.id,
+        title: step.title,
+        actualTime: totalWorked._sum.timeWorked
+      },
+      message: 'Work time recorded successfully'
+    });
+  } catch (error) {
+    console.error('Error adding manual work entry:', error);
+    res.status(500).json({ message: 'Error recording work time' });
   }
 };
 
@@ -1552,5 +2335,10 @@ module.exports = {
   removeUserFromGuide,
   getAssignedUsers,
   assignMultipleUsersToGuide,
-  addManualWorkEntry
+  addManualWorkEntry,
+  getGuideChangeHistory,
+  addWorkEntry,
+  getStepWorkEntries,
+  assignItemsToStep,
+  updateStepInventoryStatus
 };

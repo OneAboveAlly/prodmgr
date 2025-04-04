@@ -1,3 +1,4 @@
+// backend/src/app.js
 const dotenv = require('dotenv');
 const express = require('express');
 const cors = require('cors');
@@ -7,8 +8,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { startScheduler } = require('./scheduler');
 const { setupChatSocket } = require('./sockets/chat.socket');
-
-
 
 dotenv.config();
 
@@ -21,10 +20,10 @@ const io = new Server(server, {
   },
 });
 
-// 🔥 pozwala używać io np. w kontrolerach: req.app.get('io')
+// Make io available throughout the app
 app.set('io', io);
 
-// Socket.IO – pojedyncza obsługa
+// Socket.IO setup
 setupChatSocket(io);
 
 // Start the scheduler with io instance
@@ -39,7 +38,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Statyczne pliki
+// Static files
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Routes
@@ -51,17 +50,21 @@ app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/chat', require('./routes/chat.routes'));
 app.use('/api/time-tracking', require('./routes/timeTracking.routes'));
 app.use('/api/leave', require('./routes/leave.routes'));
-app.use('/api/messages', require('./routes/message.routes')); // ✅ Wiadomości
+app.use('/api/messages', require('./routes/message.routes'));
 app.use('/api/production', require('./routes/production.routes'));
 app.use('/api/inventory', require('./routes/inventory.routes'));
 
-// Globalny error handler
+// Add new routes for enhanced features
+app.use('/api/statistics', require('./routes/statistics.routes'));
+app.use('/api/ocr', require('./routes/ocr.routes'));
+
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send({ message: 'Something went wrong!' });
 });
 
-// Start serwera
+// Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);

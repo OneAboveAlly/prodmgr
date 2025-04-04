@@ -7,7 +7,7 @@ const { checkAuth, checkPermission } = require('../middleware/auth.middleware');
 // Wszystkie trasy wymagają uwierzytelnienia
 router.use(checkAuth);
 
-// Trasy dla przedmiotów magazynowych
+// --- Standard Inventory Routes ---
 router.get(
   '/items',
   checkPermission('inventory', 'read', 1),
@@ -40,7 +40,29 @@ router.delete(
   inventoryController.deleteInventoryItem
 );
 
-// Trasy dla transakcji magazynowych
+// --- Production Integration Routes ---
+// Get production-related inventory requests
+router.get(
+  '/production-requests',
+  checkPermission('inventory', 'read', 1),
+  inventoryController.getProductionRequests
+);
+
+// Process a production request (reserve, issue, or return)
+router.post(
+  '/production-requests/:id/process',
+  checkPermission('inventory', 'manage', 1),
+  inventoryController.processProductionRequest
+);
+
+// Get inventory report for a specific guide
+router.get(
+  '/guides/:id/report',
+  checkPermission('inventory', 'read', 1),
+  inventoryController.getGuideInventoryReport
+);
+
+// --- Transaction Routes ---
 router.post(
   '/items/:id/add',
   checkPermission('inventory', 'update', 1),
@@ -59,7 +81,13 @@ router.get(
   inventoryController.getItemTransactions
 );
 
-// Trasy dla przedmiotów w przewodnikach produkcyjnych
+router.get(
+  '/transactions/all',
+  checkPermission('inventory', 'read', 1),
+  inventoryController.getAllInventoryTransactions 
+);
+
+// --- Guide Inventory Management ---
 router.post(
   '/guides/:guideId/items',
   checkPermission('production', 'update', 1),
@@ -78,19 +106,11 @@ router.put(
   inventoryController.updateReservationStatus
 );
 
-// Trasa dla raportów magazynowych
+// --- Reporting ---
 router.get(
   '/report',
   checkPermission('inventory', 'read', 1),
   inventoryController.generateInventoryReport
 );
-
-
-router.get(
-  '/transactions/all',
-  checkPermission('inventory', 'read', 1),
-  inventoryController.getAllInventoryTransactions 
-);
-
 
 module.exports = router;

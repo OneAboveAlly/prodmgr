@@ -2,8 +2,21 @@ import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ClipboardCheck, Loader2, Hourglass, ChevronDown, ChevronUp, MessageSquareText, Clock, User } from 'lucide-react';
+import { 
+  Plus, 
+  ClipboardCheck, 
+  Loader2, 
+  Hourglass, 
+  ChevronDown, 
+  ChevronUp, 
+  MessageSquareText, 
+  Clock, 
+  User, 
+  Edit,
+  Trash2
+} from 'lucide-react';
 import CommentSection from './CommentSection';
+import EditStepModal from './EditStepModal';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import productionApi from '../../api/production.api';
 import { toast } from 'react-toastify';
@@ -13,8 +26,11 @@ const StepList = ({ steps, guideId, onAddStepClick }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [openStepId, setOpenStepId] = useState(null);
+  const [editingStep, setEditingStep] = useState(null);
 
   const canAdd = hasPermission('production', 'update');
+  const canEdit = hasPermission('production', 'update');
+  const canDelete = hasPermission('production', 'update', 2); // Higher permission level for deletion
   const canManage = hasPermission('production', 'manage');
 
   // Mutation for updating step status
@@ -31,6 +47,19 @@ const StepList = ({ steps, guideId, onAddStepClick }) => {
     onError: (error) => {
       console.error('Error updating step status:', error);
       toast.error('Błąd aktualizacji statusu kroku');
+    }
+  });
+
+  // Mutation for deleting a step
+  const deleteStepMutation = useMutation({
+    mutationFn: (stepId) => productionApi.deleteStep(stepId),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['productionGuide', guideId]);
+      toast.success('Krok usunięty pomyślnie');
+    },
+    onError: (error) => {
+      console.error('Error deleting step:', error);
+      toast.error('Błąd usuwania kroku');
     }
   });
 
@@ -68,6 +97,16 @@ const StepList = ({ steps, guideId, onAddStepClick }) => {
 
   const toggleComments = (stepId) => {
     setOpenStepId(prev => (prev === stepId ? null : stepId));
+  };
+
+  const handleEditClick = (step) => {
+    setEditingStep(step);
+  };
+
+  const handleDeleteStep = (stepId, stepTitle) => {
+    if (window.confirm(`Czy na pewno chcesz usunąć krok "${stepTitle}"? Ta akcja nie może być cofnięta.`)) {
+      deleteStepMutation.mutate(stepId);
+    }
   };
 
   return (
@@ -140,6 +179,27 @@ const StepList = ({ steps, guideId, onAddStepClick }) => {
                       {step.status}
                     </span>
                   </button>
+                  
+                  {canEdit && (
+                    <button
+                      onClick={() => handleEditClick(step)}
+                      className="text-indigo-600 hover:text-indigo-800 p-1 rounded hover:bg-indigo-50"
+                      title="Edytuj krok"
+                    >
+                      <Edit size={16} />
+                    </button>
+                  )}
+                  
+                  {canDelete && (
+                    <button
+                      onClick={() => handleDeleteStep(step.id, step.title)}
+                      className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                      title="Usuń krok"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  
                   <button
                     onClick={() => toggleComments(step.id)}
                     className="text-gray-600 hover:text-indigo-600 transition"
@@ -159,6 +219,15 @@ const StepList = ({ steps, guideId, onAddStepClick }) => {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Edycja kroku - modal */}
+      {editingStep && (
+        <EditStepModal
+          step={editingStep}
+          guideId={guideId}
+          onClose={() => setEditingStep(null)}
+        />
       )}
     </div>
   );

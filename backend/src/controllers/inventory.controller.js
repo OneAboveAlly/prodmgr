@@ -50,7 +50,7 @@ const getAllInventoryItems = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const { search, category, lowStock } = req.query;
+    const { search, category, lowStock, productionUsed } = req.query;
 
     const where = {};
 
@@ -66,11 +66,24 @@ const getAllInventoryItems = async (req, res) => {
     if (category) {
       where.category = category;
     }
+    
+    // New filter for items used in production
+    let productionFilter = {};
+    if (productionUsed === 'true') {
+      productionFilter = {
+        stepInventory: {
+          some: {}
+        }
+      };
+    }
 
-    // Pobierz wszystkie przedmioty (jeszcze bez filtrowania lowStock)
+    // Fetch items with additional production usage data
     const [items, total] = await Promise.all([
       prisma.inventoryItem.findMany({
-        where,
+        where: {
+          ...where,
+          ...productionFilter
+        },
         skip,
         take: limit,
         orderBy: { name: 'asc' },
@@ -95,13 +108,36 @@ const getAllInventoryItems = async (req, res) => {
                 }
               }
             }
+          },
+          // Add relation to step inventory to see production usage
+          stepInventory: {
+            include: {
+              step: {
+                select: {
+                  id: true,
+                  title: true,
+                  guide: {
+                    select: {
+                      id: true,
+                      title: true,
+                      status: true
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }),
-      prisma.inventoryItem.count({ where })
+      prisma.inventoryItem.count({ 
+        where: {
+          ...where,
+          ...productionFilter
+        }
+      })
     ]);
 
-    // 🔁 Filtrowanie po niskim stanie po stronie JS
+    // Filter by low stock if requested
     let filteredItems = items;
     if (lowStock === 'true') {
       filteredItems = items.filter(item =>
@@ -109,7 +145,7 @@ const getAllInventoryItems = async (req, res) => {
       );
     }
 
-    // Pobierz dostępne kategorie
+    // Get available categories
     const categories = await prisma.inventoryItem.findMany({
       select: { category: true },
       distinct: ['category'],
@@ -120,18 +156,59 @@ const getAllInventoryItems = async (req, res) => {
       }
     });
 
-    // Statystyki (naprawiony licznik lowStock)
+    // Calculate available, reserved, and issued quantities
+    const enhancedItems = filteredItems.map(item => {
+      // Calculate quantities for different statuses
+      const reserved = item.stepInventory
+        .filter(si => si.status === 'RESERVED')
+        .reduce((sum, si) => sum + si.quantity, 0);
+        
+      const issued = item.stepInventory
+        .filter(si => si.status === 'ISSUED')
+        .reduce((sum, si) => sum + si.quantity, 0);
+        
+      const needed = item.stepInventory
+        .filter(si => si.status === 'NEEDED')
+        .reduce((sum, si) => sum + si.quantity, 0);
+      
+      // Calculate available quantity
+      const available = Math.max(0, item.quantity - reserved);
+      
+      // Count production guides using this item
+      const usedInGuides = [...new Set(
+        item.stepInventory.map(si => si.step.guide.id)
+      )].length;
+      
+      return {
+        ...item,
+        reserved,
+        issued,
+        needed,
+        available,
+        usedInGuides,
+        productionUsage: item.stepInventory.length > 0
+      };
+    });
+
+    // Statistics
     const stats = {
       totalItems: total,
       lowStockItems: (await prisma.inventoryItem.findMany({
         where: { minQuantity: { not: null } },
         select: { quantity: true, minQuantity: true }
       })).filter(item => item.quantity <= item.minQuantity).length,
+      usedInProduction: await prisma.inventoryItem.count({
+        where: {
+          stepInventory: {
+            some: {}
+          }
+        }
+      }),
       categories: categories.map(cat => cat.category).filter(Boolean)
     };
 
     res.json({
-      items: filteredItems,
+      items: enhancedItems,
       stats,
       pagination: {
         total: filteredItems.length,
@@ -141,11 +218,10 @@ const getAllInventoryItems = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Błąd podczas pobierania przedmiotów:', error);
-    res.status(500).json({ message: 'Błąd podczas pobierania przedmiotów magazynowych' });
+    console.error('Error fetching inventory items:', error);
+    res.status(500).json({ message: 'Error retrieving inventory items' });
   }
 };
-
 
 // Pobieranie szczegółów przedmiotu magazynowego
 const getInventoryItemById = async (req, res) => {
@@ -186,33 +262,106 @@ const getInventoryItemById = async (req, res) => {
               }
             }
           }
+        },
+        stepInventory: {
+          include: {
+            step: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                guide: {
+                  select: {
+                    id: true,
+                    title: true,
+                    status: true,
+                    barcode: true,
+                    priority: true,
+                    deadline: true
+                  }
+                }
+              }
+            }
+          }
         }
       }
     });
     
     if (!item) {
-      return res.status(404).json({ message: 'Przedmiot magazynowy nie znaleziony' });
+      return res.status(404).json({ message: 'Inventory item not found' });
     }
     
-    // Oblicz zarezerwowaną ilość
-    const reserved = item.guideItems
-      .filter(gi => gi.reserved)
-      .reduce((total, gi) => total + gi.quantity, 0);
+    // Calculate reserved, issued, needed and available quantities
+    const reserved = item.stepInventory
+      .filter(si => si.status === 'RESERVED')
+      .reduce((sum, si) => sum + si.quantity, 0);
+      
+    const issued = item.stepInventory
+      .filter(si => si.status === 'ISSUED')
+      .reduce((sum, si) => sum + si.quantity, 0);
+      
+    const needed = item.stepInventory
+      .filter(si => si.status === 'NEEDED')
+      .reduce((sum, si) => sum + si.quantity, 0);
     
-    // Oblicz dostępną ilość
+    // Calculate actual available quantity
     const available = Math.max(0, item.quantity - reserved);
     
-    // Dodaj informacje o rezerwacji i dostępności
+    // Group by guide for a production usage overview
+    const productionUsage = {};
+    item.stepInventory.forEach(si => {
+      const guideId = si.step.guide.id;
+      if (!productionUsage[guideId]) {
+        productionUsage[guideId] = {
+          guide: si.step.guide,
+          steps: [],
+          totalQuantity: 0,
+          reserved: 0,
+          issued: 0,
+          needed: 0
+        };
+      }
+      
+      // Add to the appropriate category based on status
+      switch (si.status) {
+        case 'NEEDED':
+          productionUsage[guideId].needed += si.quantity;
+          break;
+        case 'RESERVED':
+          productionUsage[guideId].reserved += si.quantity;
+          break;
+        case 'ISSUED':
+          productionUsage[guideId].issued += si.quantity;
+          break;
+      }
+      
+      productionUsage[guideId].totalQuantity += si.quantity;
+      
+      // Only add the step if it's not already in the array
+      if (!productionUsage[guideId].steps.some(s => s.id === si.step.id)) {
+        productionUsage[guideId].steps.push({
+          id: si.step.id,
+          title: si.step.title,
+          status: si.step.status
+        });
+      }
+    });
+    
+    // Add information about reservation and availability
     const itemWithAvailability = {
       ...item,
       available,
-      reserved
+      reserved,
+      issued,
+      needed,
+      productionUsage: Object.values(productionUsage),
+      guideCount: Object.keys(productionUsage).length
     };
     
     res.json(itemWithAvailability);
   } catch (error) {
-    console.error('Błąd podczas pobierania przedmiotu:', error);
-    res.status(500).json({ message: 'Błąd podczas pobierania przedmiotu magazynowego' });
+    console.error('Error fetching inventory item:', error);
+    res.status(500).json({ message: 'Error retrieving inventory item' });
   }
 };
 
@@ -1157,7 +1306,6 @@ const getAllInventoryTransactions = async (req, res) => {
   }
 };
 
-
 // Pobieranie historii transakcji przedmiotu
 const getItemTransactions = async (req, res) => {
   try {
@@ -1319,6 +1467,350 @@ const generateInventoryReport = async (req, res) => {
   }
 };
 
+// Get production-related inventory requests
+const getProductionRequests = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    
+    // Filter by status
+    const { status } = req.query;
+    const where = {};
+    
+    if (status) {
+      where.status = status;
+    }
+    
+    // Get step inventory requests
+    const [requests, total] = await Promise.all([
+      prisma.stepInventory.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [
+          { status: 'asc' },
+          { createdAt: 'desc' }
+        ],
+        include: {
+          step: {
+            select: {
+              id: true,
+              title: true,
+              guide: {
+                select: {
+                  id: true,
+                  title: true,
+                  barcode: true,
+                  deadline: true,
+                  priority: true
+                }
+              }
+            }
+          },
+          item: {
+            select: {
+              id: true,
+              name: true,
+              barcode: true,
+              unit: true,
+              quantity: true
+            }
+          }
+        }
+      }),
+      prisma.stepInventory.count({ where })
+    ]);
+    
+    // Get counts by status
+    const statusCounts = await prisma.stepInventory.groupBy({
+      by: ['status'],
+      _count: {
+        _all: true
+      }
+    });
+    
+    // Format status counts
+    const counts = {
+      NEEDED: 0,
+      RESERVED: 0,
+      ISSUED: 0
+    };
+    
+    statusCounts.forEach(count => {
+      counts[count.status] = count._count._all;
+    });
+    
+    res.json({
+      requests,
+      stats: {
+        counts,
+        total
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching production requests:', error);
+    res.status(500).json({ message: 'Error retrieving production inventory requests' });
+  }
+};
+
+// Process a production request (change status and update inventory)
+const processProductionRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, notes } = req.body;
+    
+    if (!['reserve', 'issue', 'return'].includes(action)) {
+      return res.status(400).json({ message: 'Invalid action. Must be reserve, issue, or return' });
+    }
+    
+    // Get the request
+    const request = await prisma.stepInventory.findUnique({
+      where: { id },
+      include: {
+        step: {
+          select: {
+            id: true,
+            title: true,
+            guide: {
+              select: {
+                id: true,
+                title: true,
+                barcode: true,
+                assignedUsers: {
+                  select: {
+                    userId: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        item: true
+      }
+    });
+    
+    if (!request) {
+      return res.status(404).json({ message: 'Production request not found' });
+    }
+    
+    // Check if inventory is available if reserving or issuing
+    if ((action === 'reserve' || action === 'issue') && request.item.quantity < request.quantity) {
+      return res.status(400).json({
+        message: 'Insufficient inventory',
+        available: request.item.quantity,
+        required: request.quantity
+      });
+    }
+    
+    // Process based on action
+    let newStatus;
+    let transactionType;
+    let transactionQuantity = 0;
+    let inventoryUpdate = {};
+    
+    switch (action) {
+      case 'reserve':
+        newStatus = 'RESERVED';
+        transactionType = 'RESERVE';
+        transactionQuantity = -request.quantity; // Negative for reservation
+        break;
+        
+      case 'issue':
+        newStatus = 'ISSUED';
+        transactionType = 'REMOVE';
+        transactionQuantity = -request.quantity; // Negative for removal
+        inventoryUpdate = {
+          quantity: {
+            decrement: request.quantity
+          }
+        };
+        break;
+        
+      case 'return':
+        newStatus = 'NEEDED';
+        transactionType = 'RELEASE';
+        transactionQuantity = request.quantity; // Positive for return
+        // If was previously issued, add back to inventory
+        if (request.status === 'ISSUED') {
+          inventoryUpdate = {
+            quantity: {
+              increment: request.quantity
+            }
+          };
+        }
+        break;
+    }
+    
+    // Update request status
+    const updatedRequest = await prisma.stepInventory.update({
+      where: { id },
+      data: { status: newStatus }
+    });
+    
+    // Create transaction record
+    const transaction = await prisma.inventoryTransaction.create({
+      data: {
+        itemId: request.itemId,
+        quantity: transactionQuantity,
+        type: transactionType,
+        reason: `${action.toUpperCase()} for step "${request.step.title}" in guide "${request.step.guide.title}" ${notes ? `- ${notes}` : ''}`,
+        guideId: request.step.guide.id,
+        userId: req.user.id
+      }
+    });
+    
+    // Update inventory if needed
+    if (Object.keys(inventoryUpdate).length > 0) {
+      await prisma.inventoryItem.update({
+        where: { id: request.itemId },
+        data: inventoryUpdate
+      });
+    }
+    
+    // Send notifications to assigned users
+    const assignedUsers = request.step.guide.assignedUsers.map(a => a.userId);
+    for (const userId of assignedUsers) {
+      await sendNotification(
+        req.app.get('io'),
+        prisma,
+        userId,
+        `Inventory ${action.toLowerCase()}ed: ${request.quantity} ${request.item.unit} of ${request.item.name} for step "${request.step.title}"`,
+        `/production/guides/${request.step.guide.id}/steps/${request.step.id}`
+      );
+    }
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: action,
+      module: 'inventory',
+      targetId: request.itemId,
+      meta: {
+        requestId: id,
+        step: request.step.title,
+        guide: request.step.guide.title,
+        item: request.item.name,
+        quantity: request.quantity,
+        oldStatus: request.status,
+        newStatus,
+        notes
+      }
+    });
+    
+    res.json({
+      request: updatedRequest,
+      transaction,
+      message: `Request ${action}ed successfully`
+    });
+  } catch (error) {
+    console.error(`Error ${req.body.action}ing production request:`, error);
+    res.status(500).json({ message: `Error processing inventory request` });
+  }
+};
+
+// Get inventory report for a specific production guide
+const getGuideInventoryReport = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    // Get all inventory requirements for this guide
+    const stepInventory = await prisma.stepInventory.findMany({
+      where: {
+        step: {
+          guideId
+        }
+      },
+      include: {
+        step: {
+          select: {
+            id: true,
+            title: true,
+            order: true
+          }
+        },
+        item: {
+          select: {
+            id: true,
+            name: true,
+            barcode: true,
+            unit: true,
+            quantity: true
+          }
+        }
+      },
+      orderBy: [
+        { 'step.order': 'asc' },
+        { status: 'asc' }
+      ]
+    });
+    
+    // Calculate totals by item
+    const itemTotals = {};
+    stepInventory.forEach(req => {
+      const itemId = req.itemId;
+      if (!itemTotals[itemId]) {
+        itemTotals[itemId] = {
+          itemId,
+          name: req.item.name,
+          unit: req.item.unit,
+          available: req.item.quantity,
+          needed: 0,
+          reserved: 0,
+          issued: 0
+        };
+      }
+      
+      // Add to the appropriate category based on status
+      switch (req.status) {
+        case 'NEEDED':
+          itemTotals[itemId].needed += req.quantity;
+          break;
+        case 'RESERVED':
+          itemTotals[itemId].reserved += req.quantity;
+          break;
+        case 'ISSUED':
+          itemTotals[itemId].issued += req.quantity;
+          break;
+      }
+    });
+    
+    // Status summary
+    const statusSummary = {
+      NEEDED: stepInventory.filter(i => i.status === 'NEEDED').length,
+      RESERVED: stepInventory.filter(i => i.status === 'RESERVED').length,
+      ISSUED: stepInventory.filter(i => i.status === 'ISSUED').length
+    };
+    
+    res.json({
+      guide: {
+        id: guide.id,
+        title: guide.title
+      },
+      stepInventory,
+      itemTotals: Object.values(itemTotals),
+      statusSummary
+    });
+  } catch (error) {
+    console.error('Error getting guide inventory report:', error);
+    res.status(500).json({ message: 'Error retrieving guide inventory report' });
+  }
+};
 
 module.exports = {
   handleFileUpload,
@@ -1334,5 +1826,8 @@ module.exports = {
   updateReservationStatus,
   getItemTransactions,
   generateInventoryReport,
-  getAllInventoryTransactions
+  getAllInventoryTransactions,
+  getProductionRequests,
+  processProductionRequest,
+  getGuideInventoryReport
 };
