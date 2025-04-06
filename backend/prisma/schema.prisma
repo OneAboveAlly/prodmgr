@@ -49,6 +49,9 @@ model User {
 
   // OCR relation
   ocrResults OcrResult[]
+
+  // New relation for archived guides
+  archivedGuides ProductionGuide[] @relation("ArchivedGuides")
 }
 
 model Role {
@@ -94,7 +97,7 @@ model RolePermission {
   permissionId String
   value        Int      @default(0)
   createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  updatedAt    DateTime @default(now())
 
   role       Role       @relation(fields: [roleId], references: [id])
   permission Permission @relation(fields: [permissionId], references: [id])
@@ -108,7 +111,7 @@ model UserPermission {
   permissionId String
   value        Int
   createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  updatedAt    DateTime @default(now())
 
   user       User       @relation(fields: [userId], references: [id])
   permission Permission @relation(fields: [permissionId], references: [id])
@@ -204,7 +207,7 @@ model Leave {
   notes       String?
   approvedBy  String? // Optional reference to the user who approved this leave
   createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  updatedAt   DateTime  @default(now())
 
   @@index([userId])
   @@index([startDate, endDate])
@@ -277,6 +280,9 @@ model ProductionGuide {
   createdById   String
   createdBy     User              @relation("CreatedGuides", fields: [createdById], references: [id])
   status        String            @default("DRAFT") // DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
+  archivedAt    DateTime?
+  archivedById  String?
+  archivedBy    User?             @relation("ArchivedGuides", fields: [archivedById], references: [id])
   assignedUsers GuideAssignment[]
 
   // New relation to track changes
@@ -373,15 +379,18 @@ model StepWorkSession {
 }
 
 model StepAssignment {
+  id        String   @id @default(cuid())
   stepId    String
   userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
   step      ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
 
-  @@id([stepId, userId]) // Composite primary key
-  @@index([stepId])
+  @@unique([stepId, userId])
   @@index([userId])
+  @@index([stepId])
 }
 
 model Attachment {
@@ -426,7 +435,7 @@ model InventoryItem {
   createdById String
   createdBy   User         @relation("CreatedInventoryItems", fields: [createdById], references: [id])
   createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  updatedAt   DateTime     @default(now())
 
   price Float?
 
@@ -470,7 +479,7 @@ model GuideInventory {
   stepId    String? // Opcjonalne powiązanie z konkretnym krokiem
   reserved  Boolean         @default(true) // Czy przedmiot jest zarezerwowany
   createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  updatedAt DateTime        @default(now())
 
   @@unique([guideId, itemId])
   @@index([guideId])
@@ -532,7 +541,7 @@ model StepInventory {
   quantity  Float // Quantity needed for this step
   status    String         @default("NEEDED") // NEEDED, RESERVED, ISSUED
   createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  updatedAt DateTime       @default(now())
 
   @@index([stepId])
   @@index([itemId])

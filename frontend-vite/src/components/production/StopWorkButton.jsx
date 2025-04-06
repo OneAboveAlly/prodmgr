@@ -1,3 +1,4 @@
+// frontend-vite/src/components/production/StopWorkButton.jsx
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -7,30 +8,40 @@ const StopWorkButton = ({ step }) => {
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [completeStep, setCompleteStep] = useState(false);
 
   const stopWorkMutation = useMutation({
-    mutationFn: ({ stepId, notes }) => productionApi.endWorkOnStep(stepId, notes),
+    mutationFn: ({ stepId, notes, completeStep }) => 
+      productionApi.endWorkOnStep(stepId, { notes, completeStep }),
     onSuccess: () => {
       toast.success('Work completed successfully!');
       queryClient.invalidateQueries(['guide']);
       queryClient.invalidateQueries(['step', step.id]);
-      queryClient.invalidateQueries(['workEntries', step.id]);
+      queryClient.invalidateQueries(['stepWorkEntries', step.id]);
       setShowConfirm(false);
       setNotes('');
+      setCompleteStep(false);
     },
     onError: (error) => {
       toast.error(`Error completing work: ${error.message}`);
     }
   });
 
+  // Normalize step status to handle case differences
+  const normalizedStatus = step?.status?.toUpperCase() || '';
+  
   // Determine if button should be disabled
   const isDisabled = 
     stopWorkMutation.isLoading || 
-    step.status !== 'in_progress';
+    normalizedStatus !== 'IN_PROGRESS';
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    stopWorkMutation.mutate({ stepId: step.id, notes });
+    stopWorkMutation.mutate({ 
+      stepId: step.id, 
+      notes,
+      completeStep
+    });
   };
 
   if (showConfirm) {
@@ -50,6 +61,17 @@ const StopWorkButton = ({ step }) => {
               rows="2"
               placeholder="Describe what was completed..."
             ></textarea>
+          </div>
+          <div className="mb-3">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={completeStep}
+                onChange={(e) => setCompleteStep(e.target.checked)}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">Mark step as completed</span>
+            </label>
           </div>
           <div className="flex justify-end space-x-2">
             <button

@@ -1,3 +1,4 @@
+// frontend-vite/src/components/production/StartWorkButton.jsx
 import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -18,15 +19,24 @@ const StartWorkButton = ({ step }) => {
     }
   });
 
+  // Check step status - normalize status values to handle case differences
+  const normalizedStatus = step?.status?.toUpperCase() || '';
+  
   // Determine if button should be disabled
   const isDisabled = 
     startWorkMutation.isLoading || 
-    step.status === 'completed' || 
-    step.status === 'in_progress';
+    normalizedStatus === 'COMPLETED' || 
+    normalizedStatus === 'IN_PROGRESS';
+
+  const handleClick = () => {
+    if (!isDisabled) {
+      startWorkMutation.mutate(step.id);
+    }
+  };
 
   return (
     <button
-      onClick={() => startWorkMutation.mutate(step.id)}
+      onClick={handleClick}
       disabled={isDisabled}
       className={`flex items-center px-4 py-2 rounded text-white font-medium ${
         isDisabled 

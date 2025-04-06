@@ -324,6 +324,11 @@ const getProductionGuideById = async (req, res) => {
           include: {
             item: true
           }
+        },
+        assignedUsers: {
+          include: {
+            user: true
+          }
         }
       }
     });
@@ -1298,25 +1303,27 @@ const addWorkEntry = async (req, res) => {
       return res.status(404).json({ message: 'Step not found' });
     }
     
-    // Ensure the step is in progress
-    if (step.status === 'COMPLETED') {
-      return res.status(400).json({ message: 'Cannot add work to a completed step' });
-    }
+    // Calculate time limits
+    const usedTotal = await prisma.stepWorkEntry.aggregate({
+      where: {
+        stepId: stepId,
+      },
+      _sum: { timeWorked: true }
+    });
+
+    const usedMinutes = usedTotal._sum.timeWorked || 0;
+    const requestedMinutes = parseInt(timeWorked);
     
-    if (step.status === 'PENDING') {
-      // Update step status to in progress
-      await prisma.productionStep.update({
-        where: { id: stepId },
-        data: { status: 'IN_PROGRESS' }
+    // Check if adding this time would exceed the step's estimated time
+    if (step.estimatedTime && (usedMinutes + requestedMinutes) > step.estimatedTime) {
+      const availableMinutes = Math.max(0, step.estimatedTime - usedMinutes);
+      return res.status(400).json({ 
+        message: `Time limit for this step exceeded. Available: ${availableMinutes} min. Requested: ${requestedMinutes} min.`,
+        estimatedTotal: step.estimatedTime,
+        usedMinutes,
+        requestedMinutes,
+        availableMinutes
       });
-      
-      // Update guide status if needed
-      if (step.guide.status === 'DRAFT') {
-        await prisma.productionGuide.update({
-          where: { id: step.guideId },
-          data: { status: 'IN_PROGRESS' }
-        });
-      }
     }
     
     // Create the work entry
@@ -1371,10 +1378,182 @@ const addWorkEntry = async (req, res) => {
   }
 };
 
+// Update a work entry
+const updateWorkEntry = async (req, res) => {
+  try {
+    const { id: entryId } = req.params;
+    const { timeWorked, notes } = req.body;
+    const userId = req.user.id;
+    
+    // Validate timeWorked
+    if (timeWorked !== undefined && (!Number.isInteger(parseInt(timeWorked)) || parseInt(timeWorked) <= 0)) {
+      return res.status(400).json({ message: 'Time worked must be a positive integer' });
+    }
+    
+    // Find the entry
+    const workEntry = await prisma.stepWorkEntry.findUnique({
+      where: { id: entryId },
+      include: {
+        step: {
+          include: {
+            guide: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+    
+    if (!workEntry) {
+      return res.status(404).json({ message: 'Work entry not found' });
+    }
+    
+    // Check permissions - allow users with manage permission or the creator of the guide
+    const hasManagePermission = req.user.permissions['production.manage'];
+    const isGuideCreator = workEntry.step.guide.createdById === userId;
+    
+    if (!hasManagePermission && !isGuideCreator) {
+      return res.status(403).json({ message: 'You do not have permission to edit this work entry' });
+    }
+    
+    // Check if new time would exceed step limit
+    if (timeWorked !== undefined && timeWorked !== workEntry.timeWorked) {
+      const timeDifference = parseInt(timeWorked) - workEntry.timeWorked;
+      
+      if (timeDifference > 0 && workEntry.step.estimatedTime) {
+        // Calculate current total time for this step
+        const totalTime = await prisma.stepWorkEntry.aggregate({
+          where: { stepId: workEntry.stepId },
+          _sum: { timeWorked: true }
+        });
+        
+        const currentTotal = (totalTime._sum.timeWorked || 0);
+        
+        // Check if new total would exceed estimate
+        if ((currentTotal + timeDifference) > workEntry.step.estimatedTime) {
+          const availableTime = Math.max(0, workEntry.step.estimatedTime - currentTotal + workEntry.timeWorked);
+          return res.status(400).json({
+            message: `Time limit exceeded. Available: ${availableTime} minutes. Requested change: +${timeDifference} minutes.`,
+            availableTime,
+            requestedChange: timeDifference
+          });
+        }
+      }
+    }
+    
+    // Update the entry
+    const updateData = {};
+    if (timeWorked !== undefined) updateData.timeWorked = parseInt(timeWorked);
+    if (notes !== undefined) updateData.notes = notes;
+    
+    const updatedEntry = await prisma.stepWorkEntry.update({
+      where: { id: entryId },
+      data: updateData,
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        step: {
+          select: {
+            id: true,
+            title: true,
+            order: true
+          }
+        }
+      }
+    });
+    
+    // Log the update
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      module: 'workEntry',
+      targetId: entryId,
+      meta: {
+        previousData: {
+          timeWorked: workEntry.timeWorked,
+          notes: workEntry.notes
+        },
+        newData: updateData,
+        step: {
+          id: workEntry.stepId,
+          title: workEntry.step.title
+        },
+        user: {
+          id: workEntry.userId,
+          name: `${workEntry.user.firstName} ${workEntry.user.lastName}`
+        }
+      }
+    });
+    
+    // If time was changed, also update step's actual time
+    if (timeWorked !== undefined && timeWorked !== workEntry.timeWorked) {
+      const newStepTotal = await prisma.stepWorkEntry.aggregate({
+        where: { stepId: workEntry.stepId },
+        _sum: { timeWorked: true }
+      });
+      
+      await prisma.productionStep.update({
+        where: { id: workEntry.stepId },
+        data: { actualTime: newStepTotal._sum.timeWorked || 0 }
+      });
+    }
+    
+    // Notify the original user if someone else edited their entry
+    if (userId !== workEntry.userId) {
+      try {
+        await sendNotification(
+          req.app.get('io'),
+          prisma,
+          workEntry.userId,
+          `Your time entry for step "${workEntry.step.title}" was updated by ${req.user.firstName} ${req.user.lastName}`,
+          `/production/guides/${workEntry.step.guideId}/steps/${workEntry.stepId}`
+        );
+      } catch (notifyError) {
+        console.error("Non-critical notification error:", notifyError);
+      }
+    }
+    
+    res.json({
+      entry: updatedEntry,
+      message: 'Work entry updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating work entry:', error);
+    res.status(500).json({ message: 'Error updating work entry', error: error.message });
+  }
+};
+
 // Get all work entries for a step
 const getStepWorkEntries = async (req, res) => {
   try {
     const { id: stepId } = req.params;
+    
+    // Check if step exists
+    const step = await prisma.productionStep.findUnique({
+      where: { id: stepId },
+      include: {
+        guide: {
+          select: {
+            id: true,
+            title: true
+          }
+        }
+      }
+    });
+    
+    if (!step) {
+      return res.status(404).json({ message: 'Production step not found' });
+    }
     
     const entries = await prisma.stepWorkEntry.findMany({
       where: { stepId },
@@ -1383,38 +1562,59 @@ const getStepWorkEntries = async (req, res) => {
           select: {
             id: true,
             firstName: true,
-            lastName: true
+            lastName: true,
+            email: true
           }
         }
       },
       orderBy: { createdAt: 'desc' }
     });
     
-    // Calculate totals by user
-    const userTotals = {};
+    // Calculate total time
+    const totalTime = entries.reduce((sum, entry) => sum + (entry.timeWorked || 0), 0);
+    
+    // Calculate per-user totals
+    const userTotals = [];
+    const userMap = new Map();
+    
     entries.forEach(entry => {
-      const userId = entry.userId;
-      if (!userTotals[userId]) {
-        userTotals[userId] = {
-          userId,
-          firstName: entry.user.firstName,
-          lastName: entry.user.lastName,
-          totalTime: 0,
-          entryCount: 0
-        };
+      if (!entry.userId) return;
+      
+      if (userMap.has(entry.userId)) {
+        userMap.set(entry.userId, userMap.get(entry.userId) + (entry.timeWorked || 0));
+      } else {
+        userMap.set(entry.userId, entry.timeWorked || 0);
       }
-      userTotals[userId].totalTime += entry.timeWorked;
-      userTotals[userId].entryCount += 1;
     });
     
-    res.json({
+    userMap.forEach((totalTime, userId) => {
+      const user = entries.find(entry => entry.userId === userId)?.user;
+      if (user) {
+        userTotals.push({
+          userId,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          totalTime
+        });
+      }
+    });
+    
+    return res.json({
       entries,
-      userTotals: Object.values(userTotals),
-      totalTime: entries.reduce((sum, entry) => sum + entry.timeWorked, 0)
+      userTotals,
+      totalTime,
+      estimatedTotal: step.estimatedTime || 0,
+      step: {
+        id: step.id,
+        title: step.title,
+        order: step.order,
+        guideId: step.guideId,
+        guideTitle: step.guide?.title
+      }
     });
   } catch (error) {
-    console.error('Error getting work entries:', error);
-    res.status(500).json({ message: 'Error retrieving work entries' });
+    console.error('Error getting step work entries:', error);
+    return res.status(500).json({ message: 'Failed to get work entries', error: error.message });
   }
 };
 
@@ -1911,85 +2111,106 @@ const assignUserToGuide = async (req, res) => {
 const removeUserFromGuide = async (req, res) => {
   try {
     const { id: guideId, userId } = req.params;
+    console.log(`Attempting to remove user ${userId} from guide ${guideId}`);
 
-    // Check if the assignment exists
-    const assignment = await prisma.guideAssignment.findUnique({
-      where: {
-        guideId_userId: {
-          guideId,
-          userId
+    // Use a transaction to ensure all operations succeed or fail together
+    await prisma.$transaction(async (tx) => {
+      // Check if the assignment exists
+      const assignment = await tx.guideAssignment.findUnique({
+        where: {
+          guideId_userId: {
+            guideId,
+            userId
+          }
         }
+      });
+
+      if (!assignment) {
+        throw new Error('User assignment not found');
+      }
+
+      // Delete the assignment first
+      await tx.guideAssignment.delete({
+        where: {
+          guideId_userId: {
+            guideId,
+            userId
+          }
+        }
+      });
+
+      // Get user and guide info for notification and logging
+      const [user, guide] = await Promise.all([
+        tx.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }),
+        tx.productionGuide.findUnique({
+          where: { id: guideId },
+          select: {
+            id: true,
+            title: true
+          }
+        })
+      ]);
+
+      // After transaction completes, do non-critical operations
+      try {
+        // Audit logging
+        await logAudit({
+          userId: req.user.id,
+          action: "unassign",
+          module: "production",
+          targetId: guideId,
+          meta: {
+            removedUser: {
+              id: userId,
+              name: user ? `${user.firstName} ${user.lastName}` : 'Unknown user'
+            },
+            guide: {
+              id: guideId,
+              title: guide ? guide.title : 'Unknown guide'
+            }
+          }
+        });
+      } catch (logError) {
+        console.error("Non-critical error in audit logging:", logError);
+      }
+
+      try {
+        // Notify user if they exist
+        if (user && guide && req.app.get('io')) {
+          await sendNotification(
+            req.app.get('io'),
+            tx,
+            userId,
+            `You have been removed from production guide "${guide.title}"`,
+            '/production/guides',
+            req.user.id // Add the creator ID parameter
+          );
+        }
+      } catch (notifyError) {
+        console.error("Non-critical error in notification:", notifyError);
       }
     });
 
-    if (!assignment) {
-      return res.status(404).json({ message: "User assignment not found" });
-    }
-
-    // Get user and guide info for notification and logging
-    const [user, guide] = await Promise.all([
-      prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true
-        }
-      }),
-      prisma.productionGuide.findUnique({
-        where: { id: guideId },
-        select: {
-          id: true,
-          title: true
-        }
-      })
-    ]);
-
-    // Delete the assignment
-    await prisma.guideAssignment.delete({
-      where: {
-        guideId_userId: {
-          guideId,
-          userId
-        }
-      }
-    });
-
-    // Audit logging
-    await logAudit({
-      userId: req.user.id,
-      action: "unassign",
-      module: "production",
-      targetId: guideId,
-      meta: {
-        removedUser: {
-          id: userId,
-          name: user ? `${user.firstName} ${user.lastName}` : 'Unknown user'
-        },
-        guide: {
-          id: guideId,
-          title: guide ? guide.title : 'Unknown guide'
-        }
-      }
-    });
-
-    // Notify user if they exist
-    if (user && guide) {
-      await sendNotification(
-        req.app.get('io'),
-        prisma,
-        userId,
-        `You have been removed from production guide "${guide.title}"`,
-        '/production/guides'
-      );
-    }
-
+    // Respond with success
     res.json({ 
       message: "User assignment removed successfully" 
     });
   } catch (error) {
     console.error("Error removing user assignment:", error);
-    res.status(500).json({ message: "Error removing user from guide" });
+    if (error.message === 'User assignment not found') {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ 
+      message: "Error removing user from guide", 
+      error: error.message 
+    });
   }
 };
 
@@ -2339,8 +2560,7 @@ const getStepAssignedUsers = async (req, res) => {
             id: true,
             firstName: true,
             lastName: true,
-            email: true,
-            profilePicture: true
+            email: true
           }
         }
       },
@@ -2355,7 +2575,7 @@ const getStepAssignedUsers = async (req, res) => {
     res.json(users);
   } catch (error) {
     console.error('Error getting step assigned users:', error);
-    res.status(500).json({ message: 'Error retrieving assigned users' });
+    res.status(500).json({ message: 'Error retrieving assigned users', error: error.toString() });
   }
 };
 
@@ -2557,6 +2777,268 @@ const removeUserFromStep = async (req, res) => {
   }
 };
 
+/**
+ * Get all work entries for a specific guide
+ */
+const getGuideWorkEntries = async (req, res) => {
+  try {
+    const { id: guideId } = req.params;
+    
+    // Validate that the guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        steps: {
+          select: {
+            id: true,
+            title: true,
+            order: true,
+            estimatedTime: true
+          }
+        }
+      }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    const stepIds = guide.steps.map(step => step.id);
+    
+    // Get all work entries for these steps
+    const workEntries = await prisma.stepWorkEntry.findMany({
+      where: { 
+        stepId: { in: stepIds }
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        },
+        step: {
+          select: {
+            id: true,
+            title: true,
+            order: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    // Calculate total time
+    const totalTime = workEntries.reduce((sum, entry) => sum + (entry.timeWorked || 0), 0);
+    
+    // Calculate estimated total time
+    const estimatedTotal = guide.steps.reduce((sum, step) => sum + (step.estimatedTime || 0), 0);
+    
+    // Calculate per-user totals
+    const userTotals = [];
+    const userMap = new Map();
+    
+    workEntries.forEach(entry => {
+      if (!entry.userId) return;
+      
+      if (userMap.has(entry.userId)) {
+        userMap.set(entry.userId, userMap.get(entry.userId) + (entry.timeWorked || 0));
+      } else {
+        userMap.set(entry.userId, entry.timeWorked || 0);
+      }
+    });
+    
+    userMap.forEach((totalTime, userId) => {
+      const user = workEntries.find(entry => entry.userId === userId)?.user;
+      if (user) {
+        userTotals.push({
+          userId,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          totalTime
+        });
+      }
+    });
+    
+    return res.json({
+      entries: workEntries,
+      userTotals,
+      totalTime,
+      estimatedTotal
+    });
+  } catch (error) {
+    console.error('Error getting guide work entries:', error);
+    return res.status(500).json({ message: 'Failed to get work entries', error: error.message });
+  }
+};
+
+// Archive a production guide
+const archiveGuide = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    // Update the guide to archived status
+    const updatedGuide = await prisma.productionGuide.update({
+      where: { id },
+      data: {
+        status: 'ARCHIVED',
+        archivedAt: new Date(),
+        archivedById: req.user.id
+      }
+    });
+    
+    // Log the archive action
+    await logAudit({
+      userId: req.user.id,
+      action: 'archive',
+      module: 'productionGuide',
+      targetId: id,
+      meta: {
+        title: guide.title,
+        previousStatus: guide.status
+      }
+    });
+    
+    return res.json({
+      message: 'Guide archived successfully',
+      guide: updatedGuide
+    });
+  } catch (error) {
+    console.error('Error archiving guide:', error);
+    return res.status(500).json({ message: 'Failed to archive guide', error: error.toString() });
+  }
+};
+
+// Get all archived guides
+const getArchivedGuides = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', sortBy = 'archivedAt', sortOrder = 'desc' } = req.query;
+    
+    // Convert page and limit to numbers
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Build the where condition
+    const where = {
+      status: 'ARCHIVED',
+      OR: search ? [
+        { title: { contains: search, mode: 'insensitive' } },
+        { barcode: { contains: search, mode: 'insensitive' } },
+      ] : undefined,
+    };
+    
+    // Get guides
+    const guides = await prisma.productionGuide.findMany({
+      where,
+      include: {
+        archivedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: sortBy ? { [sortBy]: sortOrder } : undefined,
+      skip,
+      take: limitNum,
+    });
+    
+    // Get total count for pagination
+    const total = await prisma.productionGuide.count({ where });
+    
+    const totalPages = Math.ceil(total / limitNum);
+    
+    return res.json({
+      guides,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    console.error('Error getting archived guides:', error);
+    return res.status(500).json({ message: 'Failed to get archived guides', error: error.message });
+  }
+};
+
+// Unarchive a guide
+const unarchiveGuide = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    if (guide.status !== 'ARCHIVED') {
+      return res.status(400).json({ message: 'Guide is not archived' });
+    }
+    
+    // Determine the status to set
+    let newStatus = 'DRAFT';
+    if (guide.steps && guide.steps.length > 0) {
+      const hasCompletedSteps = guide.steps.some(step => step.status === 'COMPLETED');
+      const hasPendingSteps = guide.steps.some(step => step.status === 'PENDING');
+      
+      if (hasCompletedSteps && hasPendingSteps) {
+        newStatus = 'IN_PROGRESS';
+      } else if (hasCompletedSteps) {
+        newStatus = 'COMPLETED';
+      }
+    }
+    
+    // Update guide
+    const updatedGuide = await prisma.productionGuide.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        archivedAt: null,
+        archivedById: null
+      }
+    });
+    
+    // Log the unarchive action
+    await logAudit({
+      userId: req.user.id,
+      action: 'unarchive',
+      module: 'productionGuide',
+      targetId: guide.id,
+      meta: {
+        title: guide.title,
+        newStatus
+      }
+    });
+    
+    return res.json({
+      message: 'Guide unarchived successfully',
+      guide: updatedGuide
+    });
+  } catch (error) {
+    console.error('Error unarchiving guide:', error);
+    return res.status(500).json({ message: 'Failed to unarchive guide', error: error.message });
+  }
+};
+
 // Eksport wszystkich funkcji kontrolera
 module.exports = {
   handleFileUpload,
@@ -2579,10 +3061,15 @@ module.exports = {
   addManualWorkEntry,
   getGuideChangeHistory,
   addWorkEntry,
+  updateWorkEntry,
   getStepWorkEntries,
   assignItemsToStep,
   updateStepInventoryStatus,
   getStepAssignedUsers,
   assignUsersToStep,
-  removeUserFromStep
+  removeUserFromStep,
+  getGuideWorkEntries,
+  archiveGuide,
+  getArchivedGuides,
+  unarchiveGuide
 };

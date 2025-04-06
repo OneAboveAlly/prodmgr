@@ -43,6 +43,8 @@ import ProductionCreatePage from './pages/ProductionCreatePage';
 import ProductionGuideDetailsPage from './pages/ProductionGuideDetailsPage';
 import ProductionStepDetailsPage from './pages/ProductionStepDetailsPage';
 import ProductionGuideEditPage from './pages/ProductionGuideEditPage';
+import GuideTemplatesPage from './pages/GuideTemplatesPage';
+import ArchivedGuidesPage from './pages/ArchivedGuidesPage';
 
 // Time Tracking and Leave routes
 import TimeTrackingPage from './pages/TimeTrackingPage';
@@ -408,6 +410,36 @@ function App() {
                 element={
                   <ProtectedRoute requiredPermission={['production', 'read']}>
                     <ProductionStepDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Production Templates */}
+              <Route
+                path="/production/templates"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'read']}>
+                    <MainLayout>
+                      <GuideTemplatesPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+              {/* Archived Guides */}
+              <Route
+                path="/production/archived"
+                element={
+                  <ProtectedRoute requiredPermission={['production', 'manage']}>
+                    <MainLayout>
+                      <ArchivedGuidesPage />
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/production/archives"
+                element={
+                  <ProtectedRoute permissions={['production.read']}>
+                    <ArchivedGuidesPage />
                   </ProtectedRoute>
                 }
               />

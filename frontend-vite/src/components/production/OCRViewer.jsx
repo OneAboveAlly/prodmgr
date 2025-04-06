@@ -1,3 +1,4 @@
+// frontend-vite/src/components/production/OCRViewer.jsx
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -6,15 +7,22 @@ import productionApi from '../../api/production.api';
 
 const OCRViewer = ({ stepId, ocrText }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedText, setEditedText] = useState(ocrText);
+  const [editedText, setEditedText] = useState(ocrText || '');
   const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
 
+  // Create a custom mutation for updating OCR text since it's not defined in your API
   const updateOCRTextMutation = useMutation({
-    mutationFn: ({ stepId, text }) => productionApi.updateStepOCRText(stepId, text),
+    mutationFn: ({ text }) => {
+      // Since there doesn't seem to be a dedicated OCR update endpoint in your API,
+      // we'll update the step with OCR text as part of the step data
+      return productionApi.updateStep(stepId, {
+        ocrText: text,
+      });
+    },
     onSuccess: () => {
       toast.success('OCR text updated successfully!');
-      queryClient.invalidateQueries(['guide']);
+      queryClient.invalidateQueries(['step', stepId]);
       setIsEditing(false);
     },
     onError: (error) => {
@@ -25,14 +33,19 @@ const OCRViewer = ({ stepId, ocrText }) => {
   const handleEditToggle = () => {
     if (isEditing) {
       // Cancel editing
-      setEditedText(ocrText);
+      setEditedText(ocrText || '');
     }
     setIsEditing(!isEditing);
   };
 
   const handleSave = () => {
-    updateOCRTextMutation.mutate({ stepId, text: editedText });
+    updateOCRTextMutation.mutate({ text: editedText });
   };
+
+  // If no OCR text is provided, don't render the component
+  if (!ocrText && !isEditing) {
+    return null;
+  }
 
   return (
     <div className="mt-6 bg-white border border-gray-200 rounded-lg p-4">
@@ -68,7 +81,7 @@ const OCRViewer = ({ stepId, ocrText }) => {
         </div>
       ) : (
         <div className="bg-gray-50 p-4 rounded whitespace-pre-line text-gray-700 text-sm">
-          {ocrText}
+          {ocrText || 'No OCR text available.'}
         </div>
       )}
     </div>

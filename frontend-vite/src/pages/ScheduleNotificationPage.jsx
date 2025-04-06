@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '@/services/api.service';
-import { useUsers } from '@/modules/users/hooks/useUsers'; // zakładamy że masz hook do pobierania userów
+import { useUsers } from '@/modules/users/hooks/useUsers';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,9 +12,30 @@ const ScheduleNotificationPage = () => {
     scheduledFor: new Date().toISOString().slice(0, 16),
     sendNow: true,
   });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState([]);
 
   const { data: users = [] } = useUsers();
   const navigate = useNavigate();
+
+  // Filter users based on search term
+  useEffect(() => {
+    if (!users.length) return setFilteredUsers([]);
+    
+    if (!searchTerm.trim()) {
+      setFilteredUsers(users);
+      return;
+    }
+    
+    const lowerCaseSearch = searchTerm.toLowerCase();
+    const filtered = users.filter(user => 
+      user.firstName?.toLowerCase().includes(lowerCaseSearch) || 
+      user.lastName?.toLowerCase().includes(lowerCaseSearch) ||
+      `${user.firstName} ${user.lastName}`.toLowerCase().includes(lowerCaseSearch)
+    );
+    
+    setFilteredUsers(filtered);
+  }, [searchTerm, users]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -25,20 +46,52 @@ const ScheduleNotificationPage = () => {
     }
   };
 
-  const handleUserSelect = (e) => {
-    const options = [...e.target.options];
-    const selected = options.filter(o => o.selected).map(o => o.value);
-    setForm((prev) => ({ ...prev, userIds: selected }));
+  const handleUserToggle = (userId) => {
+    setForm((prev) => ({
+      ...prev,
+      userIds: prev.userIds.includes(userId)
+        ? prev.userIds.filter(id => id !== userId)
+        : [...prev.userIds, userId]
+    }));
+  };
+
+  const handleSelectAll = () => {
+    // If all filtered users are selected, deselect all, otherwise select all
+    const allFilteredIds = filteredUsers.map(u => u.id);
+    const allSelected = allFilteredIds.every(id => form.userIds.includes(id));
+    
+    if (allSelected) {
+      // Remove all filtered users from selection
+      setForm(prev => ({
+        ...prev,
+        userIds: prev.userIds.filter(id => !allFilteredIds.includes(id))
+      }));
+    } else {
+      // Add all filtered users to selection (avoiding duplicates)
+      const newSelectedIds = [...new Set([...form.userIds, ...allFilteredIds])];
+      setForm(prev => ({
+        ...prev,
+        userIds: newSelectedIds
+      }));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setForm(prev => ({ ...prev, userIds: [] }));
+  };
+
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-        await api.post('/notifications/schedule', {
-            ...form,
-            scheduledAt: new Date(form.scheduledFor).toISOString(),
-            sendNow: form.sendNow,
-          });
+      await api.post('/notifications/schedule', {
+        ...form,
+        scheduledAt: new Date(form.scheduledFor).toISOString(),
+        sendNow: form.sendNow,
+      });
           
       toast.success('Powiadomienie zaplanowane!');
       navigate('/notifications');
@@ -77,18 +130,83 @@ const ScheduleNotificationPage = () => {
 
         <div>
           <label className="block text-sm font-medium mb-1">Użytkownicy</label>
-          <select
-            multiple
-            value={form.userIds}
-            onChange={handleUserSelect}
-            className="w-full border rounded px-3 py-2 h-32"
-          >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.firstName} {u.lastName}
-              </option>
-            ))}
-          </select>
+          
+          {/* Search bar for users */}
+          <div className="mb-2">
+            <input
+              type="text"
+              placeholder="Szukaj użytkowników..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className="w-full border rounded px-3 py-2"
+            />
+          </div>
+          
+          {/* Selection controls */}
+          <div className="flex justify-between mb-2 text-sm">
+            <div>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-indigo-600 hover:text-indigo-800 mr-3"
+              >
+                {filteredUsers.every(u => form.userIds.includes(u.id)) 
+                  ? "Odznacz wszystkich" 
+                  : "Zaznacz wszystkich"}
+              </button>
+              {form.userIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="text-red-600 hover:text-red-800"
+                >
+                  Wyczyść wybór
+                </button>
+              )}
+            </div>
+            <span className="text-gray-500">
+              Wybrano: {form.userIds.length} {form.userIds.length === 1 ? 'użytkownika' : 'użytkowników'}
+            </span>
+          </div>
+          
+          {/* User list */}
+          <div className="border rounded max-h-60 overflow-y-auto">
+            {filteredUsers.length === 0 ? (
+              <div className="p-3 text-center text-gray-500">
+                {searchTerm ? "Nie znaleziono użytkowników" : "Brak dostępnych użytkowników"}
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {filteredUsers.map((user) => (
+                  <li 
+                    key={user.id} 
+                    className={`p-3 hover:bg-gray-50 cursor-pointer ${
+                      form.userIds.includes(user.id) ? 'bg-indigo-50' : ''
+                    }`}
+                    onClick={() => handleUserToggle(user.id)}
+                  >
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={form.userIds.includes(user.id)}
+                        onChange={() => {}} // Handled by parent click
+                        className="mr-3 h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <span className="font-medium">{user.firstName} {user.lastName}</span>
+                        {user.role && (
+                          <span className="ml-2 text-xs text-gray-500">({user.role})</span>
+                        )}
+                        {user.email && (
+                          <p className="text-sm text-gray-500">{user.email}</p>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -97,8 +215,10 @@ const ScheduleNotificationPage = () => {
             name="sendNow"
             checked={form.sendNow}
             onChange={handleChange}
+            id="sendNow"
+            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
           />
-          <label>Wyślij natychmiast</label>
+          <label htmlFor="sendNow">Wyślij natychmiast</label>
         </div>
 
         {!form.sendNow && (

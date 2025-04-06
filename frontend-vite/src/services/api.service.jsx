@@ -3,6 +3,9 @@ import authApi from '../api/auth.api';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Add this debugging interceptor to your API service
+console.log('Setting up API service interceptors');
+
 // Flaga do kontrolowania jednoczesnych prób odświeżenia tokena
 let isRefreshing = false;
 let failedQueue = [];
@@ -92,6 +95,19 @@ api.interceptors.response.use(
       }
     }
 
+    // Log detailed error information for debugging
+    console.error('API Request Failed:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data
+    });
+    
+    // Special handling for 403 errors across the application
+    if (error.response?.status === 403) {
+      console.warn('Permission denied for request:', error.config?.url);
+    }
+    
     return Promise.reject(error);
   }
 );

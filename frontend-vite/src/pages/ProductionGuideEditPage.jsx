@@ -17,37 +17,53 @@ const ProductionGuideEditPage = () => {
     priority: 'NORMAL',
     status: 'DRAFT',
     deadline: '',
+    barcode: '',
   });
 
   // Fetch guide with proper error handling and loading state
   const { data: guide, isLoading, isError, error } = useQuery({
     queryKey: ['guide', id],
-    queryFn: () => {
-      console.log('Fetching guide with ID:', id);
-      return productionApi.getGuideById(id);
-    },
-    onSuccess: (data) => {
-      console.log('Guide data received:', data);
-    },
-    onError: (err) => {
-      console.error('Error fetching guide:', err);
-      toast.error(`Failed to load guide: ${err.message}`);
+    queryFn: async () => {
+      try {
+        console.log('Fetching guide with ID:', id);
+        // Request complete data to ensure we have everything needed
+        const result = await productionApi.getGuideById(id, {
+          includeSteps: true,
+          includeStats: true,
+          includeTimeData: true
+        });
+        console.log('Guide data received:', result);
+        
+        // Check if the API returned an error object
+        if (result && result.error === true) {
+          throw new Error(result.message || "Failed to fetch guide");
+        }
+        
+        return result;
+      } catch (err) {
+        console.error("Error fetching guide:", err);
+        throw err;
+      }
     },
     refetchOnWindowFocus: false,
     refetchOnMount: true,
     staleTime: 0
   });
 
-  // Populate form when guide data is loaded
+  // Populate form when guide data is loaded - use proper guide data structure
   useEffect(() => {
     if (guide) {
       console.log('Setting form with guide data:', guide);
+      // Handle both nested and flat response structures
+      const guideData = guide.guide || guide;
+      
       setForm({
-        title: guide.title || '',
-        description: guide.description || '',
-        priority: guide.priority || 'NORMAL',
-        status: guide.status || 'DRAFT',
-        deadline: guide.deadline ? new Date(guide.deadline).toISOString().split('T')[0] : '',
+        title: guideData.title || '',
+        description: guideData.description || '',
+        priority: guideData.priority || 'NORMAL',
+        status: guideData.status || 'DRAFT',
+        deadline: guideData.deadline ? new Date(guideData.deadline).toISOString().split('T')[0] : '',
+        barcode: guideData.barcode || '',
       });
     }
   }, [guide]);

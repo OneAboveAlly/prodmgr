@@ -38,6 +38,27 @@ router.put(
   productionController.updateProductionGuide
 );
 
+// Archive a guide
+router.put(
+  '/guides/:id/archive',
+  checkPermission('production', 'update', 1),
+  productionController.archiveGuide
+);
+
+// Get archived guides
+router.get(
+  '/guides/archived',
+  checkPermission('production', 'read', 1),
+  productionController.getArchivedGuides
+);
+
+// Unarchive a guide
+router.put(
+  '/guides/:id/unarchive',
+  checkPermission('production', 'update', 1),
+  productionController.unarchiveGuide
+);
+
 // Delete a guide
 router.delete(
   '/guides/:id',
@@ -92,6 +113,27 @@ router.get(
   productionController.getStepWorkEntries
 );
 
+// NEW: Get all work entries for a guide
+router.get(
+  '/guides/:id/work-entries',
+  checkPermission('production', 'read', 1),
+  productionController.getGuideWorkEntries
+);
+
+// Get work entries for a specific step
+router.get(
+  '/steps/:id/work-entries',
+  checkPermission('production', 'read', 1),
+  productionController.getStepWorkEntries
+);
+
+// Update a work entry
+router.put(
+  '/work-entries/:id',
+  checkPermission('production', 'update', 1),
+  productionController.updateWorkEntry
+);
+
 // Legacy work routes - keeping for backward compatibility
 router.post(
   '/steps/:id/work/start',
@@ -128,10 +170,10 @@ router.post(
   productionController.assignUserToGuide
 );
 
-// Remove user assignment
+// Remove user assignment - Change permission from 'manage' level 2 to 'update' level 1
 router.delete(
   '/guides/:id/assign/:userId',
-  checkPermission('production', 'manage', 2),
+  checkPermission('production', 'update', 1),  // Less restrictive permission
   productionController.removeUserFromGuide
 );
 
