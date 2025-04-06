@@ -196,7 +196,6 @@ const getUserDetails = async (userId) => {
 };
 
 const getUserPermissions = async (userId) => {
-  // Sprawdź czy ma jakąkolwiek rolę o nazwie 'Admin' lub 'Administrator'
   const adminRole = await prisma.userRole.findFirst({
     where: {
       userId,
@@ -211,13 +210,17 @@ const getUserPermissions = async (userId) => {
   if (adminRole) {
     const allPermissions = await prisma.permission.findMany();
     const permissionMap = {};
+    
     allPermissions.forEach(p => {
-      permissionMap[`${p.module}.${p.action}`] = 1;
+      permissionMap[`${p.module}.${p.action}`] = 3;
     });
+    
+    permissionMap['*.*'] = 3;
+    permissionMap['admin.access'] = 3;
+    
     return permissionMap;
   }
 
-  // Zwykłe role i uprawnienia
   const rolePermissions = await prisma.$queryRaw`
     SELECT p.module, p.action, MAX(rp.value) as value
     FROM "UserRole" ur
@@ -235,11 +238,25 @@ const getUserPermissions = async (userId) => {
   `;
 
   const permissionMap = {};
+  
   rolePermissions.forEach(p => {
     permissionMap[`${p.module}.${p.action}`] = p.value;
   });
+  
   userPermissions.forEach(p => {
     permissionMap[`${p.module}.${p.action}`] = p.value;
+  });
+  
+  const modules = [...new Set([...rolePermissions, ...userPermissions].map(p => p.module))];
+  modules.forEach(module => {
+    const highLevelPerms = Object.entries(permissionMap)
+      .filter(([key, value]) => key.startsWith(`${module}.`) && value >= 2);
+    
+    if (highLevelPerms.length > 0) {
+      if (!permissionMap[`${module}.*`] || permissionMap[`${module}.*`] < 2) {
+        permissionMap[`${module}.*`] = 2;
+      }
+    }
   });
 
   return permissionMap;

@@ -83,7 +83,18 @@ const checkPermission = (module, action, minValue = 1) => {
         return res.status(401).json({ message: 'Authentication required' });
       }
       
-      // Check permission
+      // Check if user has Admin role - admins bypass all permission checks
+      const hasAdminRole = req.user.roles && req.user.roles.some(role => 
+        role.name === 'Admin' || role.name === 'Administrator'
+      );
+      
+      if (hasAdminRole) {
+        // Admin users bypass all permission checks
+        console.log(`Admin user ${req.user.id} bypassing permission check for ${module}.${action}`);
+        return next();
+      }
+      
+      // Check permission for non-admin users
       const permKey = `${module}.${action}`;
       const permValue = req.user.permissions[permKey] || 0;
       

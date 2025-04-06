@@ -9,6 +9,8 @@ const productionApi = {
    */
   getAllProductionGuides: async (params = {}) => {
     try {
+      console.log('Fetching guides with params:', params);
+      
       // Request detailed data for progress calculation
       const response = await api.get('/production/guides', { 
         params: {
@@ -20,21 +22,37 @@ const productionApi = {
         }
       });
       
+      // Ensure response data exists
+      if (!response.data) {
+        console.error('Empty response when fetching guides');
+        return { guides: [], pagination: { total: 0, page: 1, pages: 1 } };
+      }
+      
       // Ensure each guide has valid data structure
       if (response.data && response.data.guides) {
         response.data.guides = response.data.guides.map(guide => {
+          // Safety check for null guide
+          if (!guide) return null;
+          
           // Ensure steps array exists
           if (!guide.steps) guide.steps = [];
           
           // Ensure each step has proper time data
-          guide.steps = guide.steps.map(step => ({
-            ...step,
-            estimatedTime: Number(step.estimatedTime || 0),
-            actualTime: Number(step.actualTime || 0),
-            // If step is complete but has no actual time, set it to estimated time
-            ...(step.status === 'COMPLETED' && !step.actualTime ? 
-                { actualTime: Number(step.estimatedTime || 0) } : {})
-          }));
+          guide.steps = guide.steps.map(step => {
+            if (!step) return {}; // Handle null step
+            
+            const estimatedTime = Number(step.estimatedTime || 0);
+            const actualTime = Number(step.actualTime || 0);
+            
+            return {
+              ...step,
+              estimatedTime,
+              actualTime,
+              // If step is complete but has no actual time, set it to estimated time
+              ...(step.status === 'COMPLETED' && actualTime === 0 ? 
+                  { actualTime: estimatedTime } : {})
+            };
+          });
           
           // Ensure stats exist
           if (!guide.stats) guide.stats = {};
@@ -48,7 +66,27 @@ const productionApi = {
           guide.stats.time.totalActualTime = guide.stats.time.totalActualTime || totalActualTime;
           
           return guide;
-        });
+        }).filter(guide => guide !== null); // Remove any null guides
+      }
+      
+      // Ensure pagination exists
+      if (!response.data.pagination) {
+        response.data.pagination = {
+          total: response.data.guides ? response.data.guides.length : 0,
+          page: params.page || 1,
+          limit: params.limit || 10,
+          pages: 1
+        };
+      }
+      
+      // Ensure stats exist
+      if (!response.data.stats) {
+        response.data.stats = {
+          totalGuides: response.data.guides ? response.data.guides.length : 0,
+          inProgress: 0,
+          completed: 0,
+          critical: 0
+        };
       }
       
       return response.data;
@@ -140,22 +178,43 @@ const productionApi = {
    */
   deleteGuide: async (id) => {
     try {
-      // Simple approach like in userApi.delete - just call the delete endpoint
+      console.log(`Initiating delete for guide: ${id}`);
+      
+      // Check if the user is an admin
+      let isAdmin = false;
+      try {
+        const authContext = window.localStorage.getItem('user');
+        if (authContext) {
+          const user = JSON.parse(authContext);
+          isAdmin = user.roles && user.roles.some(role => 
+            role.name === 'Admin' || role.name === 'Administrator'
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to check admin status, continuing with standard delete');
+      }
+      
+      // Make the delete request
       const response = await api.delete(`/production/guides/${id}`);
       console.log(`Successfully deleted guide with ID: ${id}`);
       return response.data;
     } catch (error) {
       console.error(`Error deleting guide ${id}:`, error);
       
-      // Enhanced error handling with more specific messages
       if (error.response) {
         console.log('Error response status:', error.response.status);
         console.log('Error response data:', error.response.data);
         
         if (error.response.status === 403) {
-          throw new Error('You do not have permission to delete this guide. Contact administrator if needed.');
-        }
-        else if (error.response.data && error.response.data.message) {
+          const errorData = error.response.data;
+          if (errorData && errorData.requiredPermission && errorData.requiredValue) {
+            throw new Error(
+              `You do not have permission to delete this guide. Required: ${errorData.requiredPermission} (Level ${errorData.requiredValue}), but your level is ${errorData.actualValue}. Contact administrator if needed.`
+            );
+          } else {
+            throw new Error('You do not have permission to delete this guide. Contact administrator if needed.');
+          }
+        } else if (error.response.data && error.response.data.message) {
           throw new Error(error.response.data.message);
         }
       }

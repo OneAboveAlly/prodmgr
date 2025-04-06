@@ -44,23 +44,23 @@ export function AuthProvider({ children }) {
   
       localStorage.setItem('accessToken', response.data.accessToken);
   
-      // ⬇️ Pobierz pełne info o użytkowniku po zalogowaniu
+      // Fetch full user info after login
       const meResponse = await authApi.me();
       
-      // Zapisz ID użytkownika do localStorage dla Socket.io
+      // Store user ID and full user object for permission checks
       if (meResponse.data && meResponse.data.id) {
         localStorage.setItem('userId', meResponse.data.id);
+        localStorage.setItem('user', JSON.stringify(meResponse.data));
       }
       
       setUser(meResponse.data);
-  
       return meResponse.data;
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
       throw err;
     } finally {
       setLoading(false);
-      setIsReady(true); // <- dodaj to na wypadek, gdy logowanie jest pierwszym wejściem
+      setIsReady(true); // Ensure readiness after login
     }
   };
 
@@ -79,12 +79,46 @@ export function AuthProvider({ children }) {
   const hasPermission = (module, action, level = 1) => {
     if (!user || !user.permissions) return false;
 
-    if (user.roles && user.roles.some(role => role.name === 'Admin')) {
+    // Check for admin roles first
+    if (user.roles && user.roles.some(role => 
+      role.name === 'Admin' || role.name === 'Administrator')
+    ) {
       return true;
     }
-
+    
+    // Check for admin-level permissions that bypass regular permission checks
+    if (user.permissions['admin.access'] >= 2) {
+      return true;
+    }
+    
+    // For roles.* permissions, also check if user has admin.access permission
+    if (module === 'roles' && user.permissions['admin.access'] >= 1) {
+      return true;
+    }
+    
+    // Check for the specific permission
     const key = `${module}.${action}`;
-    return user.permissions[key] >= level;
+    if (user.permissions[key] >= level) {
+      return true;
+    }
+    
+    // Check for wildcard permissions (e.g., module.*)
+    const wildcardKey = `${module}.*`;
+    if (user.permissions[wildcardKey] >= level) {
+      return true;
+    }
+    
+    // Check for global wildcard permissions (*.*)
+    if (user.permissions['*.*'] >= level) {
+      return true;
+    }
+    
+    // If we have module.manage permission with higher level, it implies other permissions
+    if (action !== 'manage' && user.permissions[`${module}.manage`] >= level + 1) {
+      return true;
+    }
+    
+    return false;
   };
 
   const refetchMe = async () => {

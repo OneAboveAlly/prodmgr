@@ -11,6 +11,8 @@ const processStepTimeData = (steps) => {
   if (!steps || !Array.isArray(steps)) return [];
   
   return steps.map(step => {
+    if (!step) return {}; // Handle null/undefined step
+    
     const estimatedTime = Number(step.estimatedTime || 0);
     const actualTime = Number(step.actualTime || 0);
     
@@ -38,6 +40,12 @@ export const normalizeGuideData = (guide) => {
     // Handle different API response formats
     const guideData = guide.guide || guide;
     
+    // Check if guide data is valid
+    if (!guideData || typeof guideData !== 'object') {
+      console.error('Invalid guide data:', guideData);
+      return null;
+    }
+    
     // Ensure steps array exists and process time data
     const normalizedSteps = processStepTimeData(guideData.steps || []);
     
@@ -58,11 +66,29 @@ export const normalizeGuideData = (guide) => {
       }
     };
     
-    // Return normalized guide
+    // Calculate step status counts
+    const stepsStats = stats.steps || {};
+    const completedSteps = normalizedSteps.filter(s => s.status === 'COMPLETED').length;
+    const inProgressSteps = normalizedSteps.filter(s => s.status === 'IN_PROGRESS').length;
+    const pendingSteps = normalizedSteps.filter(s => s.status === 'PENDING').length;
+    
+    // Update step stats
+    const normalizedStepStats = {
+      ...stepsStats,
+      total: normalizedSteps.length,
+      completed: stepsStats.completed || completedSteps,
+      inProgress: stepsStats.inProgress || inProgressSteps,
+      pending: stepsStats.pending || pendingSteps
+    };
+    
+    // Return normalized guide with enhanced stats
     return {
       ...guideData,
       steps: normalizedSteps,
-      stats: normalizedStats
+      stats: {
+        ...normalizedStats,
+        steps: normalizedStepStats
+      }
     };
   } catch (error) {
     console.error('Error normalizing guide data:', error, guide);

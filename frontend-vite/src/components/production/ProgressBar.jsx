@@ -1,9 +1,10 @@
+// frontend-vite/src/components/production/ProgressBar.jsx
 import React from 'react';
 import { normalizeGuideData } from '../../utils/guideUtils';
 
 /**
  * Reusable progress bar component for production guides
- * Enhanced with data normalization and debugging
+ * Enhanced with improved data normalization and error handling
  */
 const ProgressBar = ({ guide, className = "", compact = false }) => {
   // Normalize guide data to ensure consistent structure
@@ -41,7 +42,7 @@ const ProgressBar = ({ guide, className = "", compact = false }) => {
       // Fall back to step-based progress ONLY when no time data available
       const totalSteps = steps.length;
       const completedSteps = steps.filter(step => step.status === 'COMPLETED').length;
-      const progress = Math.round((completedSteps / totalSteps) * 100);
+      const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
       return progress;
     } catch (error) {
       console.error('Error calculating progress:', error, normalizedGuide);
@@ -59,6 +60,7 @@ const ProgressBar = ({ guide, className = "", compact = false }) => {
     normalizedGuide.steps.reduce((sum, step) => sum + (Number(step.estimatedTime) || 0), 0) || 0;
     
   const completedSteps = normalizedGuide.steps.filter(s => s.status === 'COMPLETED').length || 0;
+  const totalSteps = normalizedGuide.steps.length || 0;
   
   // Use compact styling when used in cards/list views
   const headingClass = compact ? "text-sm font-medium" : "text-lg font-semibold";
@@ -81,7 +83,7 @@ const ProgressBar = ({ guide, className = "", compact = false }) => {
           Time: {totalActualTime} / {totalEstimatedTime} min
         </span>
         <span>
-          Steps: {completedSteps} / {normalizedGuide.steps.length || 0}
+          Steps: {completedSteps} / {totalSteps}
         </span>
       </div>
     </div>

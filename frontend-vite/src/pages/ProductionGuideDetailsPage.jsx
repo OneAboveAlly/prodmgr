@@ -256,6 +256,19 @@ const ProductionGuideDetailsPage = () => {
   const handleGuideDelete = () => {
     if (window.confirm('Are you sure you want to delete this production guide? This action cannot be undone.')) {
       console.log('Initiating delete for guide:', id);
+      
+      const isAdmin = user.roles && user.roles.some(role => 
+        role.name === 'Admin' || role.name === 'Administrator'
+      );
+      
+      if (isAdmin) {
+        console.log('User has admin role - should be able to delete');
+      } else {
+        console.log('User does not have admin role - checking production.delete permission');
+        const deletePermLevel = user.permissions?.['production.delete'] || 0;
+        console.log('User permission level for production.delete:', deletePermLevel);
+      }
+      
       deleteGuideMutation.mutate(id);
     }
   };
@@ -587,7 +600,7 @@ const ProductionGuideDetailsPage = () => {
                     Archive
                   </button>
                 )}
-                {hasPermission('production', 'delete') && (
+                {hasPermission('production', 'delete', 2) && (
                   <button
                     onClick={handleGuideDelete}
                     className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
