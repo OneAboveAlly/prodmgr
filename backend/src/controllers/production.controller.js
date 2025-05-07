@@ -1,12 +1,13 @@
 // backend/src/controllers/production.controller.js
 const { PrismaClient } = require('@prisma/client');
 const { logAudit } = require('../utils/auditLogger');
-const { sendNotification } = require('../utils/notificationUtils');
+const { sendNotification, sendProductionNotification } = require('../utils/notificationUtils');
 const barcodeGenerator = require('../utils/barcodeGenerator');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
+const notificationController = require('./notification.controller');
 
 const prisma = new PrismaClient();
 
@@ -56,9 +57,12 @@ const generateProductionBarcode = async () => {
     }
   });
   
-  // Format: PROD-YYYY-XXXX (XXXX is sequential padded with zeros)
+  // Add a random component to avoid collision in case of concurrent requests
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  
+  // Format: PROD-YYYY-XXXX-RRR (XXXX is sequential padded with zeros, RRR is random)
   const sequentialNumber = (count + 1).toString().padStart(4, '0');
-  return `PROD-${year}-${sequentialNumber}`;
+  return `PROD-${year}-${sequentialNumber}-${random}`;
 };
 
 // Enhanced create production guide function
@@ -70,64 +74,136 @@ const createProductionGuide = async (req, res) => {
       priority, 
       autoPriority,
       deadline,
-      assignedUsers = []
+      assignedUsers = [],
+      inventoryItems = [] // Nowe pole z listą przedmiotów magazynowych
     } = req.body;
     
-    // Generate a structured barcode
-    const uniqueBarcode = await generateProductionBarcode();
-    
-    // Create guide with enhanced fields
-    const guide = await prisma.productionGuide.create({
-      data: {
-        title,
-        description,
-        priority: priority || 'NORMAL',
-        autoPriority: autoPriority || false,
-        deadline: deadline ? new Date(deadline) : null,
-        barcode: uniqueBarcode,
-        createdById: req.user.id
+    // Function to handle guide creation with retries for barcode uniqueness
+    const createGuideWithRetry = async (retryCount = 0, maxRetries = 3) => {
+      try {
+        // Generate a structured barcode
+        const uniqueBarcode = await generateProductionBarcode();
+        
+        // Create guide with enhanced fields and handle inventory reservation in transaction
+        const result = await prisma.$transaction(async (tx) => {
+          // Create the guide
+          const guide = await tx.productionGuide.create({
+            data: {
+              title,
+              description,
+              priority: priority || 'NORMAL',
+              autoPriority: autoPriority || false,
+              deadline: deadline ? new Date(deadline) : null,
+              barcode: uniqueBarcode,
+              createdById: req.user.id
+            }
+          });
+          
+          // Log creation in change history
+          await tx.guideChangeHistory.create({
+            data: {
+              guideId: guide.id,
+              userId: req.user.id,
+              changeType: 'CREATE',
+              fieldName: 'all',
+              newValue: JSON.stringify({
+                title,
+                description,
+                priority,
+                autoPriority,
+                deadline
+              })
+            }
+          });
+          
+          // Assign users if provided
+          if (assignedUsers.length > 0) {
+            const userAssignments = assignedUsers.map(userId => ({
+              userId,
+              guideId: guide.id
+            }));
+            
+            await tx.guideAssignment.createMany({
+              data: userAssignments
+            });
+          }
+          
+          // Reserve inventory items if provided
+          const reservedItems = [];
+          const errors = [];
+          
+          if (inventoryItems && inventoryItems.length > 0) {
+            for (const itemData of inventoryItems) {
+              const { itemId, quantity, stepId = null } = itemData;
+              
+              // Check if item exists
+              const item = await tx.inventoryItem.findUnique({
+                where: { id: itemId }
+              });
+              
+              if (!item) {
+                errors.push({ itemId, error: 'Przedmiot nie istnieje' });
+                continue;
+              }
+              
+              // Validate quantity
+              const quantityValue = parseFloat(quantity);
+              if (isNaN(quantityValue) || quantityValue <= 0) {
+                errors.push({ itemId, error: 'Ilość musi być dodatnią liczbą' });
+                continue;
+              }
+              
+              // Create reservation
+              const guideItem = await tx.guideInventory.create({
+                data: {
+                  guideId: guide.id,
+                  itemId,
+                  quantity: quantityValue,
+                  stepId,
+                  reserved: true
+                }
+              });
+              
+              // Create reservation transaction
+              await tx.inventoryTransaction.create({
+                data: {
+                  itemId,
+                  quantity: 0, // Not changing actual quantity, just reserving
+                  type: 'RESERVE',
+                  reason: `Rezerwacja dla nowego przewodnika ${title} (${guide.barcode})`,
+                  guideId: guide.id,
+                  userId: req.user.id
+                }
+              });
+              
+              reservedItems.push({
+                itemId,
+                itemName: item.name,
+                unit: item.unit,
+                quantity: quantityValue,
+                stepId
+              });
+            }
+          }
+          
+          return { guide, reservedItems, errors, barcode: uniqueBarcode };
+        });
+        
+        return result;
+      } catch (error) {
+        // If this is a unique constraint error on barcode, retry with a new barcode
+        if (error.code === 'P2002' && error.meta?.target?.includes('barcode') && retryCount < maxRetries) {
+          console.log(`Barcode collision detected. Retrying... (${retryCount + 1}/${maxRetries})`);
+          return createGuideWithRetry(retryCount + 1, maxRetries);
+        }
+        
+        // Otherwise, throw the error
+        throw error;
       }
-    });
+    };
     
-    // Log creation in change history
-    await prisma.guideChangeHistory.create({
-      data: {
-        guideId: guide.id,
-        userId: req.user.id,
-        changeType: 'CREATE',
-        fieldName: 'all',
-        newValue: JSON.stringify({
-          title,
-          description,
-          priority,
-          autoPriority,
-          deadline
-        })
-      }
-    });
-    
-    // Assign users if provided
-    if (assignedUsers.length > 0) {
-      const userAssignments = assignedUsers.map(userId => ({
-        userId,
-        guideId: guide.id
-      }));
-      
-      await prisma.guideAssignment.createMany({
-        data: userAssignments
-      });
-      
-      // Send notifications to assigned users
-      for (const userId of assignedUsers) {
-        await sendNotification(
-          req.app.get('io'),
-          prisma,
-          userId,
-          `You have been assigned to a new production guide: ${title}`,
-          `/production/guides/${guide.id}`
-        );
-      }
-    }
+    // Call our recursive function with retry logic
+    const result = await createGuideWithRetry();
     
     // Attachments handling code remains the same
     const attachments = [];
@@ -139,11 +215,35 @@ const createProductionGuide = async (req, res) => {
             path: file.path,
             size: file.size,
             mimeType: file.mimetype,
-            productionGuideId: guide.id,
+            productionGuideId: result.guide.id,
             createdById: req.user.id
           }
         });
         attachments.push(attachment);
+      }
+    }
+    
+    // Send notifications to assigned users
+    if (assignedUsers.length > 0) {
+      for (const userId of assignedUsers) {
+        await sendNotification(
+          req.app.get('io'),
+          prisma,
+          userId,
+          `Zostałeś przypisany do nowego przewodnika produkcyjnego: ${title}`,
+          `/production/guides/${result.guide.id}`
+        );
+        
+        // Notify about reserved items if there are any
+        if (result.reservedItems.length > 0) {
+          await sendNotification(
+            req.app.get('io'),
+            prisma,
+            userId,
+            `Dla przewodnika "${title}" zarezerwowano ${result.reservedItems.length} pozycji z magazynu`,
+            `/production/guides/${result.guide.id}/inventory`
+          );
+        }
       }
     }
     
@@ -152,22 +252,25 @@ const createProductionGuide = async (req, res) => {
       userId: req.user.id,
       action: 'create',
       module: 'production',
-      targetId: guide.id,
+      targetId: result.guide.id,
       meta: { 
         guide: { 
           title, 
           description, 
           priority, 
-          barcode: uniqueBarcode,
+          barcode: result.barcode,
           deadline: deadline ? new Date(deadline).toISOString() : null,
-          autoPriority: autoPriority || false
+          autoPriority: autoPriority || false,
+          inventoryItemsCount: result.reservedItems.length
         } 
       }
     });
     
     res.status(201).json({
-      guide,
+      guide: result.guide,
       attachments,
+      reservedItems: result.reservedItems,
+      inventoryErrors: result.errors,
       message: 'Production guide created successfully'
     });
   } catch (error) {
@@ -189,6 +292,12 @@ const getAllProductionGuides = async (req, res) => {
     
     if (status) {
       where.status = status;
+    } else {
+      // Domyślnie wyklucz zarchiwizowane przewodniki, chyba że użytkownik
+      // jawnie zażąda ich wyświetlenia poprzez filtr 'status'
+      where.status = {
+        not: 'ARCHIVED'
+      };
     }
     
     if (priority) {
@@ -207,7 +316,7 @@ const getAllProductionGuides = async (req, res) => {
       ];
     }
     
-    // Pobieranie danych
+    // Pobieranie danych z pełnymi informacjami o krokach
     const [guides, total] = await Promise.all([
       prisma.productionGuide.findMany({
         where,
@@ -226,7 +335,10 @@ const getAllProductionGuides = async (req, res) => {
             select: {
               id: true,
               title: true,
-              status: true
+              status: true,
+              estimatedTime: true,
+              actualTime: true,
+              order: true
             }
           },
           attachments: true,
@@ -240,6 +352,67 @@ const getAllProductionGuides = async (req, res) => {
       prisma.productionGuide.count({ where })
     ]);
     
+    // Oblicz dokładne statystyki czasu dla każdego przewodnika
+    const processedGuides = guides.map(guide => {
+      // Obliczanie czasu
+      let totalEstimatedTime = 0;
+      let totalActualTime = 0;
+      
+      if (guide.steps && guide.steps.length > 0) {
+        guide.steps.forEach(step => {
+          const estimatedTime = Number(step.estimatedTime || 0);
+          totalEstimatedTime += estimatedTime;
+          
+          // Dla ukończonych kroków bez rzeczywistego czasu, użyj szacowanego
+          let actualTime = Number(step.actualTime || 0);
+          if (step.status === 'COMPLETED' && actualTime === 0) {
+            actualTime = estimatedTime;
+          }
+          
+          totalActualTime += actualTime;
+          
+          // Aktualizuj dane kroku
+          step.estimatedTime = estimatedTime;
+          step.actualTime = actualTime;
+        });
+      }
+      
+      // Dodaj statystyki do przewodnika
+      if (!guide.stats) guide.stats = {};
+      guide.stats.time = {
+        totalEstimatedTime,
+        totalActualTime,
+        progress: totalEstimatedTime > 0 ? (totalActualTime / totalEstimatedTime) * 100 : 0
+      };
+      
+      // Process assignedUsers on guide level for frontend compatibility
+      if (guide.assignedUsers && Array.isArray(guide.assignedUsers)) {
+        guide.assignedUsers = guide.assignedUsers.map(assignment => {
+          // Get the first role from userRoles array or set a default
+          const userRoleObj = assignment.user.userRoles && assignment.user.userRoles.length > 0
+            ? assignment.user.userRoles[0]
+            : null;
+          
+          // Extract the role name if available
+          const roleObj = userRoleObj?.role || null;
+          const roleName = roleObj?.name || 'User';
+          
+          return {
+            ...assignment,
+            user: {
+              ...assignment.user,
+              // Add role property for backward compatibility with frontend
+              role: roleName,
+              // Clean up the processed user object to avoid circular references
+              userRoles: undefined
+            }
+          };
+        });
+      }
+      
+      return guide;
+    });
+    
     // Podstawowe statystyki
     const stats = {
       totalGuides: total,
@@ -249,7 +422,7 @@ const getAllProductionGuides = async (req, res) => {
     };
     
     res.json({
-      guides,
+      guides: processedGuides,
       stats,
       pagination: {
         total,
@@ -268,7 +441,18 @@ const getAllProductionGuides = async (req, res) => {
 const getProductionGuideById = async (req, res) => {
   try {
     const { id } = req.params;
+    const includeSteps = req.query.includeSteps === 'true';
+    const includeStats = req.query.includeStats === 'true';
+    const includeTimeData = req.query.includeTimeData === 'true';
     
+    console.log(`Fetching guide with ID: ${id}, includeSteps: ${includeSteps}, includeStats: ${includeStats}, includeTimeData: ${includeTimeData}`);
+    
+    // Validate the ID to avoid database errors
+    if (!id || typeof id !== 'string' || id.length < 10) {
+      return res.status(400).json({ message: 'Nieprawidłowy identyfikator przewodnika' });
+    }
+    
+    // Pobieranie danych
     const guide = await prisma.productionGuide.findUnique({
       where: { id },
       include: {
@@ -279,102 +463,178 @@ const getProductionGuideById = async (req, res) => {
             lastName: true
           }
         },
-        steps: {
-          orderBy: { order: 'asc' },
+        steps: includeSteps ? {
           include: {
-            attachments: true,
-            comments: {
+            // Fix: Use stepAssignments instead of assignedUsers (which doesn't exist on ProductionStep)
+            stepAssignments: {
               include: {
                 user: {
                   select: {
                     id: true,
                     firstName: true,
-                    lastName: true
-                  }
-                },
-                recipients: {
+                    lastName: true,
+                    email: true,
+                    // Remove 'role' field which doesn't exist in User model
+                    // role: true
+                    // If you need role information, you may need to include userRoles relation
+                    userRoles: {
                   include: {
-                    user: {
-                      select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true
+                        role: true
+                      }
+                    }
                       }
                     }
                   }
                 },
+            // Optionally include other relevant relations if needed
+            workEntries: true,
                 attachments: true
-              }
-            },
-            workSessions: {
+          },
+          orderBy: {
+            order: 'asc'
+          }
+        } : false,
+        attachments: true,
+        assignedUsers: {
               include: {
                 user: {
                   select: {
                     id: true,
                     firstName: true,
-                    lastName: true
+                lastName: true,
+                email: true,
+                // Remove 'role' field which doesn't exist in User model
+                // role: true
+                // If you need role information, you may need to include userRoles relation
+                userRoles: {
+                  include: {
+                    role: true
                   }
                 }
               }
             }
           }
         },
-        attachments: true,
         inventory: {
           include: {
             item: true
-          }
-        },
-        assignedUsers: {
-          include: {
-            user: true
           }
         }
       }
     });
     
     if (!guide) {
-      return res.status(404).json({ message: 'Przewodnik produkcyjny nie znaleziony' });
+      return res.status(404).json({ message: 'Nie znaleziono przewodnika produkcyjnego' });
     }
     
-    // Obliczanie statystyk kroków
-    const stepsStats = {
-      total: guide.steps.length,
-      completed: guide.steps.filter(step => step.status === 'COMPLETED').length,
-      inProgress: guide.steps.filter(step => step.status === 'IN_PROGRESS').length,
-      pending: guide.steps.filter(step => step.status === 'PENDING').length
-    };
+    // Ensure steps is always an array
+    if (!guide.steps) guide.steps = [];
     
+    // Process steps data and calculate stats if needed
+    let stats = {};
+    
+    if (includeSteps && includeStats) {
+      try {
+        // Statystyki kroków
+        const totalSteps = guide.steps.length;
+        const completedSteps = guide.steps.filter(step => step.status === 'COMPLETED').length;
+        const pendingSteps = guide.steps.filter(step => step.status === 'PENDING').length;
+        const inProgressSteps = guide.steps.filter(step => step.status === 'IN_PROGRESS').length;
+        
+        stats.steps = {
+          total: totalSteps,
+          completed: completedSteps,
+          pending: pendingSteps,
+          inProgress: inProgressSteps,
+          progress: totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0
+        };
+      } catch (err) {
+        console.error('Error calculating step stats:', err);
+        stats.steps = { total: 0, completed: 0, pending: 0, inProgress: 0, progress: 0 };
+      }
+    }
+    
+    // Process time data if needed
+    if (includeSteps && includeTimeData) {
+      try {
     // Obliczanie czasu
     let totalEstimatedTime = 0;
     let totalActualTime = 0;
     
-    guide.steps.forEach(step => {
-      if (step.estimatedTime) {
-        totalEstimatedTime += step.estimatedTime;
-      }
-      if (step.actualTime) {
-        totalActualTime += step.actualTime;
-      }
-    });
-    
-    const timeStats = {
+        // Process each step and map stepAssignments to assignedUsers for frontend compatibility
+        guide.steps = guide.steps.map(step => {
+          try {
+            if (!step) return { estimatedTime: 0, actualTime: 0 };
+            
+            const estimatedTime = Number(step.estimatedTime || 0);
+            
+            // For completed steps without actual time, use estimated time
+            let actualTime = Number(step.actualTime || 0);
+            if (step.status === 'COMPLETED' && actualTime === 0) {
+              actualTime = estimatedTime;
+            }
+            
+            totalEstimatedTime += estimatedTime;
+            totalActualTime += actualTime;
+            
+            // Map stepAssignments to assignedUsers for backward compatibility with frontend
+            const assignedUsers = step.stepAssignments?.map(assignment => {
+              // Get the first role from userRoles array or set a default
+              const userRoleObj = assignment.user.userRoles && assignment.user.userRoles.length > 0
+                ? assignment.user.userRoles[0]
+                : null;
+              
+              // Extract the role name if available
+              const roleObj = userRoleObj?.role || null;
+              const roleName = roleObj?.name || 'User';
+              
+              return {
+                userId: assignment.user.id,
+                user: {
+                  ...assignment.user,
+                  // Add role property for backward compatibility with frontend
+                  role: roleName,
+                  // Clean up the processed user object to avoid circular references
+                  userRoles: undefined
+                }
+              };
+            }) || [];
+            
+            // Return processed step with normalized values
+            return {
+              ...step,
+              estimatedTime,
+              actualTime,
+              assignedUsers, // Add this field for frontend compatibility
+              stepAssignments: undefined // Remove to avoid duplication
+            };
+          } catch (err) {
+            console.error(`Error processing step ${step?.id}:`, err);
+            return step;
+          }
+        });
+        
+        stats.time = {
       totalEstimatedTime,
       totalActualTime,
       progress: totalEstimatedTime > 0 ? (totalActualTime / totalEstimatedTime) * 100 : 0
     };
-    
-    // Zwróć rozszerzone dane
-    res.json({
-      guide,
-      stats: {
-        steps: stepsStats,
-        time: timeStats
+      } catch (err) {
+        console.error('Error calculating time stats:', err);
+        stats.time = { totalEstimatedTime: 0, totalActualTime: 0, progress: 0 };
       }
-    });
+    }
+    
+    // Attach the calculated stats to the guide
+    guide.stats = stats;
+    
+    res.json(guide);
   } catch (error) {
     console.error('Błąd podczas pobierania przewodnika:', error);
-    res.status(500).json({ message: 'Błąd podczas pobierania przewodnika produkcyjnego' });
+    res.status(500).json({ 
+      message: 'Błąd podczas pobierania przewodnika produkcyjnego',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -388,18 +648,27 @@ const updateProductionGuide = async (req, res) => {
       priority, 
       status, 
       deadline,
-      autoPriority
+      autoPriority,
+      assignedUsers = [],
+      inventoryItems = [] // Nowe pole z przedmiotami magazynowymi
     } = req.body;
     
     // Check if guide exists
     const existingGuide = await prisma.productionGuide.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        assignedUsers: {
+          select: { userId: true }
+        }
+      }
     });
     
     if (!existingGuide) {
       return res.status(404).json({ message: 'Production guide not found' });
     }
     
+    // Use a transaction to ensure consistency
+    const result = await prisma.$transaction(async (tx) => {
     // Prepare update data
     const updateData = {};
     const changes = [];
@@ -465,19 +734,19 @@ const updateProductionGuide = async (req, res) => {
       }
     }
     
-    // Only update if there are changes
+      // Update guide
+      let updatedGuide = existingGuide;
     if (Object.keys(updateData).length > 0) {
       updateData.updatedAt = new Date();
       
-      // Update guide
-      const updatedGuide = await prisma.productionGuide.update({
+        updatedGuide = await tx.productionGuide.update({
         where: { id },
         data: updateData
       });
       
       // Record all changes in history
       for (const change of changes) {
-        await prisma.guideChangeHistory.create({
+          await tx.guideChangeHistory.create({
           data: {
             guideId: id,
             userId: req.user.id,
@@ -487,27 +756,278 @@ const updateProductionGuide = async (req, res) => {
             newValue: change.newValue
           }
         });
+        }
       }
       
-      // Audit logging
-      await logAudit({
-        userId: req.user.id,
-        action: 'update',
-        module: 'production',
-        targetId: id,
-        meta: {
-          changes,
-          previousData: {
-            title: existingGuide.title,
-            description: existingGuide.description,
-            priority: existingGuide.priority,
-            status: existingGuide.status,
-            deadline: existingGuide.deadline,
-            autoPriority: existingGuide.autoPriority
-          },
-          updatedData: updateData
+      // Handle user assignments if provided
+      if (assignedUsers && assignedUsers.length > 0) {
+        // Get current assignments
+        const existingAssignments = existingGuide.assignedUsers.map(a => a.userId);
+        
+        // Determine users to add and remove
+        const usersToAdd = assignedUsers.filter(userId => !existingAssignments.includes(userId));
+        const usersToRemove = existingAssignments.filter(userId => !assignedUsers.includes(userId));
+        
+        // Remove assignments
+        if (usersToRemove.length > 0) {
+          await tx.guideAssignment.deleteMany({
+            where: {
+              guideId: id,
+              userId: { in: usersToRemove }
+            }
+          });
+          
+          changes.push({
+            fieldName: 'assignedUsers',
+            oldValue: JSON.stringify(existingAssignments),
+            newValue: JSON.stringify(assignedUsers),
+            removed: usersToRemove
+          });
         }
-      });
+        
+        // Add new assignments
+        if (usersToAdd.length > 0) {
+          const assignmentData = usersToAdd.map(userId => ({
+            guideId: id,
+            userId
+          }));
+          
+          await tx.guideAssignment.createMany({
+            data: assignmentData
+          });
+          
+          if (usersToRemove.length === 0) {
+            changes.push({
+              fieldName: 'assignedUsers',
+              oldValue: JSON.stringify(existingAssignments),
+              newValue: JSON.stringify(assignedUsers),
+              added: usersToAdd
+            });
+          }
+          
+          // Send notifications to newly assigned users
+          for (const userId of usersToAdd) {
+            // Notification will be sent outside the transaction
+          }
+        }
+      }
+      
+      // Handle inventory items if provided
+      const inventoryResults = {
+        added: [],
+        updated: [],
+        removed: [],
+        errors: []
+      };
+      
+      if (inventoryItems && inventoryItems.length > 0) {
+        // Get current inventory items
+        const currentItems = await tx.guideInventory.findMany({
+          where: { guideId: id },
+          include: { item: true }
+        });
+        
+        // Map of current items by ID for easy lookup
+        const currentItemsMap = currentItems.reduce((map, item) => {
+          map[item.itemId] = item;
+          return map;
+        }, {});
+        
+        // Process each inventory item
+        for (const itemData of inventoryItems) {
+          const { itemId, quantity, stepId = null } = itemData;
+          
+          try {
+            // Verify item exists
+            const item = await tx.inventoryItem.findUnique({
+              where: { id: itemId }
+            });
+            
+            if (!item) {
+              inventoryResults.errors.push({ 
+                itemId, 
+                error: 'Przedmiot nie istnieje' 
+              });
+              continue;
+            }
+            
+            // Validate quantity
+            const quantityValue = parseFloat(quantity);
+            if (isNaN(quantityValue) || quantityValue <= 0) {
+              inventoryResults.errors.push({ 
+                itemId, 
+                error: 'Ilość musi być dodatnią liczbą' 
+              });
+              continue;
+            }
+            
+            // Check if the item is already assigned to this guide
+            const existingItem = currentItemsMap[itemId];
+            
+            if (existingItem) {
+              // Update existing assignment if quantity or step changed
+              if (existingItem.quantity !== quantityValue || existingItem.stepId !== stepId) {
+                const updatedItem = await tx.guideInventory.update({
+                  where: {
+                    guideId_itemId: {
+                      guideId,
+                      itemId
+                    }
+                  },
+                  data: {
+                    quantity: quantityValue,
+                    stepId
+                  }
+                });
+                
+                inventoryResults.updated.push({
+                  itemId,
+                  item: {
+                    name: item.name,
+                    unit: item.unit
+                  },
+                  oldQuantity: existingItem.quantity,
+                  newQuantity: quantityValue,
+                  stepId
+                });
+              }
+              
+              // Remove from map so we can track what's left to delete
+              delete currentItemsMap[itemId];
+            } else {
+              // Create new assignment
+              const newGuideItem = await tx.guideInventory.create({
+                data: {
+                  guideId: id,
+                  itemId,
+                  quantity: quantityValue,
+                  stepId,
+                  reserved: true
+                }
+              });
+              
+              // Create reservation transaction
+              await tx.inventoryTransaction.create({
+                data: {
+                  itemId,
+                  quantity: 0, // Not changing actual quantity, just reserving
+                  type: 'RESERVE',
+                  reason: `Rezerwacja dla przewodnika ${updatedGuide.title} (${updatedGuide.barcode})`,
+                  guideId: id,
+                  userId: req.user.id
+                }
+              });
+              
+              inventoryResults.added.push({
+                itemId,
+                item: {
+                  name: item.name,
+                  unit: item.unit
+                },
+                quantity: quantityValue,
+                stepId
+              });
+            }
+          } catch (error) {
+            console.error(`Error processing inventory item ${itemId}:`, error);
+            inventoryResults.errors.push({ 
+              itemId, 
+              error: error.message 
+            });
+          }
+        }
+        
+        // Remove items that were not in the update
+        const itemsToRemove = Object.values(currentItemsMap);
+        for (const itemToRemove of itemsToRemove) {
+          try {
+            // Only release reserved items
+            if (itemToRemove.reserved) {
+              // Create transaction to release reservation
+              await tx.inventoryTransaction.create({
+                data: {
+                  itemId: itemToRemove.itemId,
+                  quantity: 0, // Not changing actual quantity, just releasing reservation
+                  type: 'RELEASE',
+                  reason: `Zwolnienie rezerwacji z przewodnika ${updatedGuide.title} (${updatedGuide.barcode})`,
+                  guideId: id,
+                  userId: req.user.id
+                }
+              });
+            }
+            
+            // Delete the guide inventory item
+            await tx.guideInventory.delete({
+              where: {
+                guideId_itemId: {
+                  guideId: id,
+                  itemId: itemToRemove.itemId
+                }
+              }
+            });
+            
+            inventoryResults.removed.push({
+              itemId: itemToRemove.itemId,
+              item: {
+                name: itemToRemove.item.name,
+                unit: itemToRemove.item.unit
+              },
+              quantity: itemToRemove.quantity
+            });
+          } catch (error) {
+            console.error(`Error removing inventory item ${itemToRemove.itemId}:`, error);
+            inventoryResults.errors.push({ 
+              itemId: itemToRemove.itemId, 
+              error: error.message 
+            });
+          }
+        }
+        
+        // Add inventory changes to change history if any
+        if (inventoryResults.added.length > 0 || 
+            inventoryResults.updated.length > 0 || 
+            inventoryResults.removed.length > 0) {
+          await tx.guideChangeHistory.create({
+            data: {
+              guideId: id,
+              userId: req.user.id,
+              changeType: 'UPDATE',
+              fieldName: 'inventory',
+              oldValue: JSON.stringify(currentItems.map(item => ({
+                itemId: item.itemId,
+                name: item.item.name,
+                quantity: item.quantity
+              }))),
+              newValue: JSON.stringify(inventoryItems)
+            }
+          });
+        }
+      }
+      
+      return {
+        updatedGuide,
+        changes,
+        inventoryResults
+      };
+    });
+    
+    // Actions outside the transaction
+    
+    // Send notifications for assigned users
+    if (assignedUsers && assignedUsers.length > 0) {
+      const existingAssignments = existingGuide.assignedUsers.map(a => a.userId);
+      const usersToAdd = assignedUsers.filter(userId => !existingAssignments.includes(userId));
+      
+      for (const userId of usersToAdd) {
+        await sendNotification(
+          req.app.get('io'),
+          prisma,
+          userId,
+          `Zostałeś przypisany do przewodnika produkcyjnego: ${result.updatedGuide.title}`,
+          `/production/guides/${id}`
+        );
+      }
+    }
       
       // Notification for status change
       if (status && status !== existingGuide.status) {
@@ -523,22 +1043,42 @@ const updateProductionGuide = async (req, res) => {
             req.app.get('io'),
             prisma,
             assignment.userId,
-            `Production guide "${updatedGuide.title}" status changed to ${status}`,
+          `Status przewodnika "${result.updatedGuide.title}" zmienił się na ${status}`,
             `/production/guides/${id}`
           );
         }
       }
+    
+    // Audit logging
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      module: 'production',
+      targetId: id,
+      meta: {
+        changes: result.changes,
+        inventoryChanges: {
+          added: result.inventoryResults.added.length,
+          updated: result.inventoryResults.updated.length,
+          removed: result.inventoryResults.removed.length,
+          errors: result.inventoryResults.errors.length
+        },
+        previousData: {
+          title: existingGuide.title,
+          description: existingGuide.description,
+          priority: existingGuide.priority,
+          status: existingGuide.status,
+          deadline: existingGuide.deadline,
+          autoPriority: existingGuide.autoPriority
+        }
+      }
+    });
       
       res.json({
-        guide: updatedGuide,
+      guide: result.updatedGuide,
+      inventoryResults: result.inventoryResults,
         message: 'Production guide updated successfully'
       });
-    } else {
-      res.json({
-        guide: existingGuide,
-        message: 'No changes to update'
-      });
-    }
   } catch (error) {
     console.error('Error updating guide:', error);
     res.status(500).json({ message: 'Error updating production guide' });
@@ -1226,16 +1766,25 @@ const endWorkOnStep = async (req, res) => {
       _sum: { duration: true }
     });
     
+    // Konwersja z sekund na minuty i zaokrąglenie w górę
+    const actualTimeInMinutes = Math.ceil(totalDuration._sum.duration / 60);
+    
+    // Określ, czy krok powinien być oznaczony jako zakończony
+    // 1. Jeśli użytkownik wyraźnie zażądał zakończenia kroku
+    // 2. Lub jeśli rzeczywisty czas jest większy lub równy szacowanemu czasowi 
+    const shouldComplete = completeStep || (step.estimatedTime > 0 && actualTimeInMinutes >= step.estimatedTime);
+    
+    // Aktualizuj krok
     await prisma.productionStep.update({
       where: { id },
       data: {
-        actualTime: Math.ceil(totalDuration._sum.duration / 60), // Konwersja z sekund na minuty i zaokrąglenie w górę
-        status: completeStep ? 'COMPLETED' : step.status
+        actualTime: actualTimeInMinutes,
+        status: shouldComplete ? 'COMPLETED' : step.status
       }
     });
     
-    // Jeśli oznaczono krok jako zakończony i wszystkie kroki są zakończone, zaktualizuj status przewodnika
-    if (completeStep) {
+    // Sprawdź czy wszystkie kroki są zakończone i zaktualizuj status przewodnika
+    if (shouldComplete) {
       const allSteps = await prisma.productionStep.findMany({
         where: { guideId: step.guideId }
       });
@@ -1249,6 +1798,25 @@ const endWorkOnStep = async (req, res) => {
           where: { id: step.guideId },
           data: { status: 'COMPLETED' }
         });
+      }
+      
+      // Wysyłaj powiadomienie o ukończeniu kroku, jeśli został automatycznie oznaczony jako ukończony
+      if (!completeStep && shouldComplete) {
+        const stepOwner = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { firstName: true, lastName: true }
+        });
+        
+        // Wysyłaj powiadomienie do twórcy przewodnika, jeśli nie jest to osoba, która ukończyła krok
+        if (step.guide.createdById !== req.user.id) {
+          await sendNotification(
+            req.app.get('io'),
+            prisma,
+            step.guide.createdById,
+            `Step "${step.title}" has been automatically completed by ${stepOwner.firstName} ${stepOwner.lastName}`,
+            `/production/guides/${step.guideId}`
+          );
+        }
       }
     }
     
@@ -1265,13 +1833,17 @@ const endWorkOnStep = async (req, res) => {
         guideId: step.guideId,
         guideTitle: step.guide.title,
         duration,
-        completeStep
+        autoCompleted: !completeStep && shouldComplete,
+        completeStep: shouldComplete
       }
     });
     
     res.json({
       workSession,
-      message: 'Sesja pracy zakończona pomyślnie'
+      stepCompleted: shouldComplete,
+      message: shouldComplete 
+        ? 'Sesja pracy zakończona pomyślnie. Krok został oznaczony jako ukończony.' 
+        : 'Sesja pracy zakończona pomyślnie.'
     });
   } catch (error) {
     console.error('Błąd podczas kończenia pracy:', error);
@@ -2585,8 +3157,8 @@ const assignUsersToStep = async (req, res) => {
     const { stepId } = req.params;
     const { userIds, notify = true, notifyMessage } = req.body;
     
-    if (!Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({ message: 'Invalid or empty userIds array' });
+    if (!Array.isArray(userIds)) {
+      return res.status(400).json({ message: 'Invalid userIds array' });
     }
     
     // Check if step exists
@@ -2601,11 +3173,50 @@ const assignUsersToStep = async (req, res) => {
       return res.status(404).json({ message: 'Production step not found' });
     }
     
-    // Process each user assignment
+    // Pobierz obecnie przypisanych użytkowników
+    const currentAssignments = await prisma.stepAssignment.findMany({
+      where: { stepId }
+    });
+    
+    const currentUserIds = currentAssignments.map(assignment => assignment.userId);
+    
+    // Identyfikuj użytkowników do usunięcia (tych, którzy są obecnie przypisani, ale nie ma ich w nowej liście)
+    const userIdsToRemove = currentUserIds.filter(id => !userIds.includes(id));
+    
+    // Identyfikuj nowych użytkowników do przypisania
+    const newUserIds = userIds.filter(id => !currentUserIds.includes(id));
+    
     const results = [];
     const errors = [];
     
-    for (const userId of userIds) {
+    // 1. Usuń przypisania dla tych, którzy zostali odznaczeni
+    if (userIdsToRemove.length > 0) {
+      for (const userId of userIdsToRemove) {
+        try {
+          await prisma.stepAssignment.delete({
+            where: {
+              stepId_userId: {
+                stepId,
+                userId
+              }
+            }
+          });
+          
+          results.push({
+            userId,
+            success: true,
+            removed: true,
+            message: 'User assignment removed'
+          });
+        } catch (error) {
+          console.error(`Error removing user ${userId} assignment:`, error);
+          errors.push({ userId, error: error.message, operation: 'remove' });
+        }
+      }
+    }
+    
+    // 2. Dodaj nowe przypisania
+    for (const userId of newUserIds) {
       try {
         // Check if user exists
         const user = await prisma.user.findUnique({
@@ -2614,31 +3225,15 @@ const assignUsersToStep = async (req, res) => {
         });
         
         if (!user) {
-          errors.push({ userId, error: 'User not found' });
-          continue;
-        }
-        
-        // Check if assignment already exists
-        const existingAssignment = await prisma.stepAssignment.findUnique({
-          where: {
-            stepId_userId: {
-              stepId: stepId,
-              userId: userId
-            }
-          }
-        });
-        
-        if (existingAssignment) {
-          // Assignment already exists, skip
-          results.push({ userId, success: true, message: 'User already assigned' });
+          errors.push({ userId, error: 'User not found', operation: 'add' });
           continue;
         }
         
         // Create the assignment
         await prisma.stepAssignment.create({
           data: {
-            stepId: stepId,
-            userId: userId
+            stepId,
+            userId
           }
         });
         
@@ -2648,23 +3243,27 @@ const assignUsersToStep = async (req, res) => {
             ? notifyMessage 
             : `You have been assigned to step "${step.title}" in production guide "${step.guide.title}"`;
           
-          await sendNotification(
+          // Używamy nowej funkcji sendProductionNotification
+          await sendProductionNotification(
             req.app.get('io'),
             prisma,
             userId,
             message,
-            `/production/steps/${stepId}`
+            `/production/guides/${step.guideId}`,
+            'STEP_ASSIGNED',
+            req.user.id
           );
         }
         
         results.push({ 
           userId, 
           success: true, 
+          added: true,
           message: 'User assigned successfully' 
         });
       } catch (error) {
         console.error(`Error assigning user ${userId}:`, error);
-        errors.push({ userId, error: error.message });
+        errors.push({ userId, error: error.message, operation: 'add' });
       }
     }
     
@@ -2679,21 +3278,30 @@ const assignUsersToStep = async (req, res) => {
         stepTitle: step.title,
         guideId: step.guideId,
         guideTitle: step.guide.title,
-        userIds: results.filter(r => r.success).map(r => r.userId),
+        usersAdded: newUserIds.length,
+        usersRemoved: userIdsToRemove.length,
         notify,
         notifyMessage
       }
     });
     
     res.json({
-      success: errors.length === 0,
+      success: true,
       results,
       errors,
-      message: `${results.length} users assigned to step, ${errors.length} errors`
+      message: `Users assigned to step successfully`,
+      summary: {
+        added: newUserIds.length,
+        removed: userIdsToRemove.length,
+        errors: errors.length
+      }
     });
   } catch (error) {
     console.error('Error assigning users to step:', error);
-    res.status(500).json({ message: 'Error assigning users to production step' });
+    res.status(500).json({ 
+      message: 'Error assigning users to production step',
+      error: error.message
+    });
   }
 };
 
@@ -3039,6 +3647,221 @@ const unarchiveGuide = async (req, res) => {
   }
 };
 
+// Funkcja umożliwiająca wydawanie zarezerwowanych przedmiotów
+const withdrawReservedItems = async (req, res) => {
+  try {
+    const { guideId } = req.params;
+    const { items } = req.body;
+    
+    // Sprawdź, czy przewodnik istnieje
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId },
+      include: {
+        assignedUsers: {
+          select: { userId: true }
+        }
+      }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Przewodnik produkcyjny nie znaleziony' });
+    }
+    
+    // Sprawdź, czy użytkownik jest przypisany do przewodnika
+    const isAssigned = guide.assignedUsers.some(assignment => assignment.userId === req.user.id);
+    
+    if (!isAssigned) {
+      return res.status(403).json({ 
+        message: 'Nie masz uprawnień do pobierania przedmiotów z tego przewodnika. Musisz być przypisany do przewodnika.'
+      });
+    }
+    
+    // Waliduj tablicę przedmiotów
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Nieprawidłowa lista przedmiotów' });
+    }
+    
+    const results = [];
+    const errors = [];
+    
+    // Wykonaj operacje na każdym przedmiocie
+    for (const itemData of items) {
+      const { itemId, quantity } = itemData;
+      
+      try {
+        // Sprawdź, czy przedmiot jest zarezerwowany dla przewodnika
+        const guideItem = await prisma.guideInventory.findUnique({
+          where: {
+            guideId_itemId: {
+              guideId,
+              itemId
+            }
+          },
+          include: {
+            item: true
+          }
+        });
+        
+        if (!guideItem) {
+          errors.push({ itemId, error: 'Przedmiot nie jest przypisany do tego przewodnika' });
+          continue;
+        }
+        
+        if (!guideItem.reserved) {
+          errors.push({ itemId, error: 'Przedmiot nie jest zarezerwowany' });
+          continue;
+        }
+        
+        // Sprawdź, czy ilość jest prawidłowa
+        const requestedQuantity = parseFloat(quantity);
+        if (isNaN(requestedQuantity) || requestedQuantity <= 0) {
+          errors.push({ itemId, error: 'Ilość musi być dodatnią liczbą' });
+          continue;
+        }
+        
+        if (requestedQuantity > guideItem.quantity) {
+          errors.push({ 
+            itemId, 
+            error: `Żądana ilość (${requestedQuantity}) przekracza zarezerwowaną ilość (${guideItem.quantity})` 
+          });
+          continue;
+        }
+        
+        // Sprawdź, czy jest wystarczająca ilość w magazynie
+        if (guideItem.item.quantity < requestedQuantity) {
+          errors.push({ 
+            itemId, 
+            error: `Niewystarczająca ilość w magazynie. Dostępne: ${guideItem.item.quantity} ${guideItem.item.unit}` 
+          });
+          continue;
+        }
+        
+        // Wykonaj transakcję wydania
+        const result = await prisma.$transaction(async (tx) => {
+          // Aktualizuj stan magazynowy
+          const updatedItem = await tx.inventoryItem.update({
+            where: { id: itemId },
+            data: {
+              quantity: {
+                decrement: requestedQuantity
+              }
+            }
+          });
+          
+          // Aktualizuj rezerwację
+          let updatedGuideItem;
+          
+          if (requestedQuantity === guideItem.quantity) {
+            // Jeśli wydano całą zarezerwowaną ilość, oznacz jako wydane
+            updatedGuideItem = await tx.guideInventory.update({
+              where: {
+                guideId_itemId: {
+                  guideId,
+                  itemId
+                }
+              },
+              data: {
+                reserved: false,
+                withdrawnById: req.user.id,
+                withdrawnDate: new Date() // Dodajemy datę pobrania
+              }
+            });
+          } else {
+            // Jeśli wydano część, zmniejsz zarezerwowaną ilość i utwórz nowy wpis na wydane
+            // Zmniejsz zarezerwowaną ilość
+            updatedGuideItem = await tx.guideInventory.update({
+              where: {
+                guideId_itemId: {
+                  guideId,
+                  itemId
+                }
+              },
+              data: {
+                quantity: {
+                  decrement: requestedQuantity
+                }
+              }
+            });
+            
+            // Utwórz nowy wpis dla wydanej ilości
+            await tx.guideInventory.create({
+              data: {
+                guideId,
+                itemId,
+                quantity: requestedQuantity,
+                stepId: guideItem.stepId,
+                reserved: false,
+                withdrawnById: req.user.id,
+                withdrawnDate: new Date() // Dodajemy datę pobrania
+              }
+            });
+          }
+          
+          // Dodaj transakcję wydania
+          const transaction = await tx.inventoryTransaction.create({
+            data: {
+              itemId,
+              quantity: -requestedQuantity,
+              type: 'ISSUE',
+              reason: `Wydanie dla przewodnika ${guide.title} (${guide.barcode}) przez ${req.user.firstName} ${req.user.lastName}`,
+              guideId,
+              userId: req.user.id
+            }
+          });
+          
+          return {
+            updatedItem,
+            updatedGuideItem,
+            transaction
+          };
+        });
+        
+        // Dodaj do wyników
+        results.push({
+          itemId,
+          item: {
+            name: guideItem.item.name,
+            unit: guideItem.item.unit
+          },
+          quantity: requestedQuantity,
+          remainingQuantity: result.updatedItem.quantity
+        });
+        
+        // Logowanie audytu
+        await logAudit({
+          userId: req.user.id,
+          action: 'withdraw',
+          module: 'guideInventory',
+          targetId: guideId,
+          meta: {
+            guideId,
+            guideTitle: guide.title,
+            itemId,
+            itemName: guideItem.item.name,
+            quantity: requestedQuantity,
+            transactionId: result.transaction.id
+          }
+        });
+      } catch (error) {
+        console.error(`Błąd podczas wydawania przedmiotu ${itemId}:`, error);
+        errors.push({ itemId, error: error.message });
+      }
+    }
+    
+    res.json({
+      success: errors.length === 0,
+      results,
+      errors,
+      message: results.length > 0
+        ? `Wydano ${results.length} przedmiotów z przewodnika`
+        : 'Nie wydano żadnych przedmiotów'
+    });
+  } catch (error) {
+    console.error('Błąd podczas wydawania przedmiotów:', error);
+    res.status(500).json({ message: 'Błąd podczas wydawania przedmiotów z przewodnika' });
+  }
+};
+
 // Eksport wszystkich funkcji kontrolera
 module.exports = {
   handleFileUpload,
@@ -3071,5 +3894,6 @@ module.exports = {
   getGuideWorkEntries,
   archiveGuide,
   getArchivedGuides,
-  unarchiveGuide
+  unarchiveGuide,
+  withdrawReservedItems
 };

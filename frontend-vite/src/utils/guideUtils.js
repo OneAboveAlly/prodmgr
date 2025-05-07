@@ -37,6 +37,9 @@ export const normalizeGuideData = (guide) => {
   if (!guide) return null;
   
   try {
+    // Debug the incoming guide data
+    console.debug('Normalizing guide data:', guide?.id, guide?.title);
+    
     // Handle different API response formats
     const guideData = guide.guide || guide;
     
@@ -57,12 +60,17 @@ export const normalizeGuideData = (guide) => {
     const stats = guideData.stats || {};
     const timeStats = stats.time || {};
     
+    // Include derived time progress calculation directly in stats
+    const timeBasedProgress = totalEstimatedTime > 0 ? 
+      Math.min(100, Math.round((totalActualTime / totalEstimatedTime) * 100)) : 0;
+    
     const normalizedStats = {
       ...stats,
       time: {
         ...timeStats,
         totalActualTime: Number(timeStats.totalActualTime) || totalActualTime,
-        totalEstimatedTime: Number(timeStats.totalEstimatedTime) || totalEstimatedTime
+        totalEstimatedTime: Number(timeStats.totalEstimatedTime) || totalEstimatedTime,
+        progress: Number(timeStats.progress) || timeBasedProgress
       }
     };
     
@@ -81,15 +89,35 @@ export const normalizeGuideData = (guide) => {
       pending: stepsStats.pending || pendingSteps
     };
     
-    // Return normalized guide with enhanced stats
-    return {
+    // Calculate steps-based progress
+    const stepBasedProgress = normalizedSteps.length > 0 ? 
+      Math.round((completedSteps / normalizedSteps.length) * 100) : 0;
+    
+    // Build the final normalized guide
+    const normalizedGuide = {
       ...guideData,
       steps: normalizedSteps,
       stats: {
         ...normalizedStats,
-        steps: normalizedStepStats
+        steps: normalizedStepStats,
+        progress: {
+          byTime: timeBasedProgress,
+          bySteps: stepBasedProgress
+        }
       }
     };
+    
+    // Log normalized data for debugging
+    console.debug('Normalized guide data:', {
+      id: normalizedGuide.id,
+      title: normalizedGuide.title,
+      totalSteps: normalizedGuide.steps.length,
+      timeStats: normalizedGuide.stats.time,
+      stepStats: normalizedGuide.stats.steps,
+      progressStats: normalizedGuide.stats.progress
+    });
+    
+    return normalizedGuide;
   } catch (error) {
     console.error('Error normalizing guide data:', error, guide);
     return guide; // Return original data as fallback

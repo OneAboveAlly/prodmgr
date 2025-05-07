@@ -11,28 +11,28 @@ const TimeTrackingSettingsPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   
-  // Check permission and redirect if needed
+  // Sprawdź uprawnienia i przekieruj, jeśli to konieczne
   useEffect(() => {
     if (!hasPermission('timeTracking', 'manageSettings')) {
       navigate('/time-tracking');
     }
   }, [hasPermission, navigate]);
   
-  // Setup form state
+  // Konfiguracja stanu formularza
   const [formData, setFormData] = useState({
     enableBreakButton: true,
     minSessionDuration: 0,
     maxSessionDuration: 720,
-    maxBreakDuration: 60
+    maxBreakDuration: 15
   });
   
-  // Fetch current settings
+  // Pobierz bieżące ustawienia
   const { data: settings, isLoading } = useQuery({
     queryKey: ['timeTrackingSettings'],
     queryFn: () => timeTrackingApi.getSettings().then(res => res.data),
   });
   
-  // Update form state when settings load
+  // Aktualizuj stan formularza po załadowaniu ustawień
   useEffect(() => {
     if (settings) {
       setFormData({
@@ -44,19 +44,19 @@ const TimeTrackingSettingsPage = () => {
     }
   }, [settings]);
   
-  // Update settings mutation
+  // Mutacja aktualizacji ustawień
   const updateSettingsMutation = useMutation({
     mutationFn: (data) => timeTrackingApi.updateSettings(data),
     onSuccess: () => {
-      toast.success('Settings updated successfully');
+      toast.success('Ustawienia zaktualizowane pomyślnie');
       queryClient.invalidateQueries({ queryKey: ['timeTrackingSettings'] });
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update settings');
+      toast.error(error.response?.data?.message || 'Nie udało się zaktualizować ustawień');
     }
   });
   
-  // Handle form input changes
+  // Obsługa zmian w polach formularza
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -65,37 +65,37 @@ const TimeTrackingSettingsPage = () => {
     }));
   };
   
-  // Handle form submission
+  // Obsługa wysłania formularza
   const handleSubmit = (e) => {
     e.preventDefault();
     updateSettingsMutation.mutate(formData);
   };
   
-  // Handle cancel button
+  // Obsługa przycisku anuluj
   const handleCancel = () => {
     navigate('/time-tracking');
   };
   
-  // If the user doesn't have the required permission, we don't render anything
-  // The useEffect above will handle the redirect
+  // Jeśli użytkownik nie ma wymaganych uprawnień, nie renderujemy niczego
+  // Powyższy useEffect obsłuży przekierowanie
   if (!hasPermission('timeTracking', 'manageSettings')) {
     return null;
   }
   
   if (isLoading) {
-    return <div className="text-center py-8">Loading settings...</div>;
+    return <div className="text-center py-8">Ładowanie ustawień...</div>;
   }
   
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Time Tracking Settings</h1>
+          <h1 className="text-2xl font-bold">Ustawienia śledzenia czasu pracy</h1>
         </div>
         
         <div className="bg-white shadow-md rounded-lg p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Break Button Setting */}
+            {/* Ustawienie przycisku przerwy */}
             <div>
               <div className="flex items-center">
                 <input
@@ -107,19 +107,19 @@ const TimeTrackingSettingsPage = () => {
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
                 <label htmlFor="enableBreakButton" className="ml-2 block text-sm font-medium text-gray-700">
-                  Enable Break Button
+                  Włącz przycisk przerwy
                 </label>
               </div>
               <p className="mt-1 text-sm text-gray-500">
-                When enabled, users can track breaks separately from work time.
+                Gdy włączone, użytkownicy mogą śledzić przerwy oddzielnie od czasu pracy.
               </p>
             </div>
             
-            {/* Duration Settings */}
+            {/* Ustawienia czasu trwania */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="minSessionDuration" className="block text-sm font-medium text-gray-700">
-                  Minimum Session Duration (minutes)
+                  Minimalny czas sesji (minuty)
                 </label>
                 <input
                   type="number"
@@ -132,13 +132,13 @@ const TimeTrackingSettingsPage = () => {
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Minimum required time for a session to be valid (0 = no minimum)
+                  Minimalny wymagany czas, aby sesja była ważna (0 = brak minimum)
                 </p>
               </div>
               
               <div>
                 <label htmlFor="maxSessionDuration" className="block text-sm font-medium text-gray-700">
-                  Maximum Session Duration (minutes)
+                  Maksymalny czas sesji (minuty)
                 </label>
                 <input
                   type="number"
@@ -151,16 +151,16 @@ const TimeTrackingSettingsPage = () => {
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Maximum allowed time for a single work session (default = 12 hours)
+                  Maksymalny dozwolony czas dla pojedynczej sesji pracy (domyślnie = 12 godzin)
                 </p>
               </div>
             </div>
             
-            {/* Break Duration Settings */}
+            {/* Ustawienia czasu przerwy */}
             {formData.enableBreakButton && (
               <div>
                 <label htmlFor="maxBreakDuration" className="block text-sm font-medium text-gray-700">
-                  Maximum Break Duration (minutes)
+                  Maksymalny czas przerwy (minuty)
                 </label>
                 <input
                   type="number"
@@ -173,19 +173,19 @@ const TimeTrackingSettingsPage = () => {
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Maximum allowed time for a single break (default = 1 hour)
+                  Maksymalny dozwolony czas dla pojedynczej przerwy (domyślnie = 15 minut)
                 </p>
               </div>
             )}
             
-            {/* Action Buttons */}
+            {/* Przyciski akcji */}
             <div className="flex justify-end space-x-4 pt-4">
               <button
                 type="button"
                 onClick={handleCancel}
                 className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
-                Cancel
+                Anuluj
               </button>
               
               <button
@@ -193,7 +193,7 @@ const TimeTrackingSettingsPage = () => {
                 disabled={updateSettingsMutation.isPending}
                 className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
               >
-                {updateSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
+                {updateSettingsMutation.isPending ? 'Zapisywanie...' : 'Zapisz ustawienia'}
               </button>
             </div>
           </form>

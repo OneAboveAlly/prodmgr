@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import timeTrackingApi from '../../api/timeTracking.api';
 
-// Helper function to format time as HH:MM:SS
+// Funkcja pomocnicza do formatowania czasu jako GG:MM:SS
 const formatTime = (seconds) => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -27,13 +27,13 @@ const TimeTracker = () => {
   const [totalTimer, setTotalTimer] = useState(null); // Timer dla całkowitego czasu
   const [sessionNotes, setSessionNotes] = useState("");
   
-  // Fetch time tracking settings
+  // Pobieranie ustawień śledzenia czasu
   const { data: settings } = useQuery({
     queryKey: ['timeTrackingSettings'],
     queryFn: () => timeTrackingApi.getSettings().then(res => res.data),
   });
   
-  // Fetch current session
+  // Pobieranie aktualnej sesji
   const { 
     data: currentSession,
     isLoading: sessionLoading,
@@ -41,31 +41,31 @@ const TimeTracker = () => {
   } = useQuery({
     queryKey: ['currentSession'],
     queryFn: () => timeTrackingApi.getCurrentSession().then(res => res.data),
-    refetchInterval: 60000, // Refetch every minute
+    refetchInterval: 60000, // Odświeżanie co minutę
   });
   
-  // Handle notes changes
+  // Obsługa zmian notatek
   const handleNotesChange = (e) => {
     setSessionNotes(e.target.value);
   };
   
-  // Mutations
+  // Mutacje
   const startSessionMutation = useMutation({
     mutationFn: () => timeTrackingApi.startSession({ notes: sessionNotes }),
     onSuccess: () => {
-      toast.success('Work session started');
+      toast.success('Sesja pracy rozpoczęta');
       setSessionNotes("");
       refetchCurrentSession();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to start session');
+      toast.error(error.response?.data?.message || 'Nie udało się rozpocząć sesji');
     }
   });
   
   const endSessionMutation = useMutation({
     mutationFn: () => timeTrackingApi.endSession({ notes: sessionNotes }),
     onSuccess: () => {
-      toast.success('Work session ended');
+      toast.success('Sesja pracy zakończona');
       setSessionNotes("");
       queryClient.invalidateQueries({ queryKey: ['currentSession'] });
       queryClient.invalidateQueries({ queryKey: ['userSessions'] });
@@ -78,40 +78,40 @@ const TimeTracker = () => {
       setTotalTime(0);
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to end session');
+      toast.error(error.response?.data?.message || 'Nie udało się zakończyć sesji');
     }
   });
   
   const startBreakMutation = useMutation({
     mutationFn: timeTrackingApi.startBreak,
     onSuccess: () => {
-      toast.success('Break started');
+      toast.success('Przerwa rozpoczęta');
       refetchCurrentSession();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to start break');
+      toast.error(error.response?.data?.message || 'Nie udało się rozpocząć przerwy');
     }
   });
   
   const endBreakMutation = useMutation({
     mutationFn: timeTrackingApi.endBreak,
     onSuccess: () => {
-      toast.success('Break ended');
+      toast.success('Przerwa zakończona');
       refetchCurrentSession();
       stopBreakTimer();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to end break');
+      toast.error(error.response?.data?.message || 'Nie udało się zakończyć przerwy');
     }
   });
   
-  // Determine current state
+  // Określenie bieżącego stanu
   const isSessionActive = !!currentSession;
   const activeBreak = currentSession?.breaks?.find(b => b.status === 'active');
   const isBreakActive = !!activeBreak;
   const isBreakButtonEnabled = settings?.enableBreakButton ?? true;
   
-  // Start timer for work time
+  // Uruchomienie timera dla czasu pracy
   const startTimer = (initialSeconds = 0) => {
     stopTimer();
     setElapsedTime(initialSeconds);
@@ -123,7 +123,7 @@ const TimeTracker = () => {
     setTimer(newTimer);
   };
   
-  // Stop timer for work time
+  // Zatrzymanie timera dla czasu pracy
   const stopTimer = () => {
     if (timer) {
       clearInterval(timer);
@@ -131,7 +131,7 @@ const TimeTracker = () => {
     }
   };
   
-  // Start timer for break time
+  // Uruchomienie timera dla czasu przerwy
   const startBreakTimer = (initialSeconds = 0) => {
     stopBreakTimer();
     setBreakTime(initialSeconds);
@@ -143,7 +143,7 @@ const TimeTracker = () => {
     setBreakTimer(newTimer);
   };
   
-  // Stop timer for break time
+  // Zatrzymanie timera dla czasu przerwy
   const stopBreakTimer = () => {
     if (breakTimer) {
       clearInterval(breakTimer);
@@ -151,7 +151,7 @@ const TimeTracker = () => {
     }
   };
   
-  // Start timer for total time
+  // Uruchomienie timera dla całkowitego czasu
   const startTotalTimer = (initialSeconds = 0) => {
     stopTotalTimer();
     setTotalTime(initialSeconds);
@@ -163,7 +163,7 @@ const TimeTracker = () => {
     setTotalTimer(newTimer);
   };
   
-  // Stop timer for total time
+  // Zatrzymanie timera dla całkowitego czasu
   const stopTotalTimer = () => {
     if (totalTimer) {
       clearInterval(totalTimer);
@@ -171,7 +171,7 @@ const TimeTracker = () => {
     }
   };
   
-  // Handle session operations
+  // Obsługa operacji na sesji
   const handleStartSession = () => {
     startSessionMutation.mutate();
   };
@@ -188,10 +188,10 @@ const TimeTracker = () => {
     endBreakMutation.mutate();
   };
   
-  // Initialize timers when component mounts or session changes
+  // Inicjalizacja timerów po zamontowaniu komponentu lub zmianie sesji
   useEffect(() => {
     if (currentSession) {
-      // Set notes from current session if available
+      // Ustaw notatki z bieżącej sesji, jeśli dostępne
       if (currentSession.notes) {
         setSessionNotes(currentSession.notes);
       }
@@ -201,12 +201,12 @@ const TimeTracker = () => {
       let initialSeconds = Math.floor((now - startTime) / 1000);
       let totalSeconds = initialSeconds; // Całkowity czas od rozpoczęcia sesji
       
-      // Subtract break times for work time calculation
+      // Odejmij czas przerw dla obliczenia czasu pracy
       const completedBreaks = currentSession.breaks?.filter(b => b.status === 'completed') || [];
       const totalBreakSeconds = completedBreaks.reduce((total, b) => total + (b.duration || 0), 0);
       initialSeconds -= totalBreakSeconds;
       
-      // Start the timer
+      // Uruchom timer
       if (!isBreakActive) {
         startTimer(initialSeconds);
       } else {
@@ -214,7 +214,7 @@ const TimeTracker = () => {
         stopTimer();
       }
       
-      // Check for active break
+      // Sprawdź aktywną przerwę
       if (activeBreak) {
         const breakStartTime = new Date(activeBreak.startTime);
         const breakSeconds = Math.floor((now - breakStartTime) / 1000);
@@ -224,10 +224,10 @@ const TimeTracker = () => {
         setBreakTime(totalBreakSeconds);
       }
       
-      // Start total time timer
+      // Uruchom timer dla całkowitego czasu
       startTotalTimer(totalSeconds);
     } else {
-      // No active session, stop all timers
+      // Brak aktywnej sesji, zatrzymaj wszystkie timery
       stopTimer();
       stopBreakTimer();
       stopTotalTimer();
@@ -236,7 +236,7 @@ const TimeTracker = () => {
       setTotalTime(0);
     }
     
-    // Cleanup timers on unmount
+    // Czyszczenie timerów przy odmontowaniu
     return () => {
       stopTimer();
       stopBreakTimer();
@@ -245,48 +245,48 @@ const TimeTracker = () => {
   }, [currentSession, activeBreak, isBreakActive]);
   
   if (sessionLoading) {
-    return <div className="text-center py-8">Loading...</div>;
+    return <div className="text-center py-8">Ładowanie...</div>;
   }
   
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Timer Display */}
+        {/* Wyświetlanie czasu */}
         <div className="flex flex-col items-center justify-center">
           {isSessionActive && (
             <div className="mb-4">
               <div className="text-5xl font-bold text-indigo-600">{formatTime(totalTime)}</div>
-              <div className="text-gray-600 font-medium text-center">Total Time</div>
+              <div className="text-gray-600 font-medium text-center">Czas całkowity</div>
             </div>
           )}
           
           <div className="text-4xl font-bold mb-2">{formatTime(elapsedTime)}</div>
-          <div className="text-gray-600">Work Time</div>
+          <div className="text-gray-600">Czas pracy</div>
           
           {(isSessionActive || breakTime > 0) && isBreakButtonEnabled && (
             <div className="mt-4">
               <div className="text-2xl font-semibold">{formatTime(breakTime)}</div>
-              <div className="text-gray-600">Break Time</div>
+              <div className="text-gray-600">Czas przerwy</div>
             </div>
           )}
           
-          {/* Session Notes */}
+          {/* Notatki do sesji */}
           <div className="mt-4 w-full">
             <label htmlFor="session-notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Session Notes
+              Notatki do sesji
             </label>
             <textarea
               id="session-notes"
               value={sessionNotes}
               onChange={handleNotesChange}
-              placeholder="What are you working on? Add notes for this session..."
+              placeholder="Nad czym pracujesz? Dodaj notatki do tej sesji..."
               rows="3"
               className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             ></textarea>
           </div>
         </div>
         
-        {/* Control Buttons */}
+        {/* Przyciski sterujące */}
         <div className="flex flex-col items-center justify-center space-y-4">
           {!isSessionActive && (
             <button
@@ -296,7 +296,7 @@ const TimeTracker = () => {
                 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50
                 disabled:bg-green-300 disabled:cursor-not-allowed"
             >
-              {startSessionMutation.isPending ? 'Starting...' : 'Start Work'}
+              {startSessionMutation.isPending ? 'Rozpoczynanie...' : 'Rozpocznij pracę'}
             </button>
           )}
           
@@ -308,7 +308,7 @@ const TimeTracker = () => {
                 hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50
                 disabled:bg-yellow-300 disabled:cursor-not-allowed"
             >
-              {startBreakMutation.isPending ? 'Starting...' : 'Start Break'}
+              {startBreakMutation.isPending ? 'Rozpoczynanie...' : 'Rozpocznij przerwę'}
             </button>
           )}
           
@@ -320,7 +320,7 @@ const TimeTracker = () => {
                 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
                 disabled:bg-blue-300 disabled:cursor-not-allowed"
             >
-              {endBreakMutation.isPending ? 'Ending...' : 'End Break'}
+              {endBreakMutation.isPending ? 'Kończenie...' : 'Zakończ przerwę'}
             </button>
           )}
           
@@ -332,21 +332,21 @@ const TimeTracker = () => {
                 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50
                 disabled:bg-red-300 disabled:cursor-not-allowed"
             >
-              {endSessionMutation.isPending ? 'Ending...' : 'End Work'}
+              {endSessionMutation.isPending ? 'Kończenie...' : 'Zakończ pracę'}
             </button>
           )}
         </div>
       </div>
       
-      {/* Session Info */}
+      {/* Informacje o sesji */}
       {isSessionActive && (
         <div className="mt-6 pt-4 border-t border-gray-200 text-sm text-gray-600">
           <p className="mb-1">
-            <span className="font-medium">Session started:</span> {new Date(currentSession.startTime).toLocaleString()}
+            <span className="font-medium">Sesja rozpoczęta:</span> {new Date(currentSession.startTime).toLocaleString()}
           </p>
           {currentSession.breaks && currentSession.breaks.length > 0 && (
             <p>
-              <span className="font-medium">Breaks:</span> {currentSession.breaks.length} (Total: {formatTime(breakTime)})
+              <span className="font-medium">Przerwy:</span> {currentSession.breaks.length} (Łącznie: {formatTime(breakTime)})
             </p>
           )}
         </div>

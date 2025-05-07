@@ -10,6 +10,28 @@ const { v4: uuidv4 } = require('uuid');
 
 const prisma = new PrismaClient();
 
+/**
+ * Helper function to check if user has the required permission level
+ * @param {Object} permissions - User permissions object
+ * @param {string} module - Permission module
+ * @param {string} action - Permission action
+ * @param {number} minLevel - Minimum level required (default: 1)
+ * @returns {boolean} - Whether the user has the required permission
+ */
+const hasPermission = (permissions, module, action, minLevel = 1) => {
+  if (!permissions) return false;
+  
+  // Check for wildcard permission
+  if (permissions['*.*'] && permissions['*.*'] >= minLevel) return true;
+  
+  // Check for module wildcard
+  if (permissions[`${module}.*`] && permissions[`${module}.*`] >= minLevel) return true;
+  
+  // Check for specific permission
+  const permKey = `${module}.${action}`;
+  return permissions[permKey] !== undefined && permissions[permKey] >= minLevel;
+};
+
 // Konfiguracja Multera do obsługi plików
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -126,6 +148,12 @@ const getAllInventoryItems = async (req, res) => {
                 }
               }
             }
+          },
+          // Add relation to guide inventory to track reservations
+          guideItems: {
+            where: {
+              reserved: true
+            }
           }
         }
       }),
@@ -158,8 +186,8 @@ const getAllInventoryItems = async (req, res) => {
 
     // Calculate available, reserved, and issued quantities
     const enhancedItems = filteredItems.map(item => {
-      // Calculate quantities for different statuses
-      const reserved = item.stepInventory
+      // Calculate quantities for different statuses from stepInventory
+      const reservedFromSteps = item.stepInventory
         .filter(si => si.status === 'RESERVED')
         .reduce((sum, si) => sum + si.quantity, 0);
         
@@ -170,6 +198,14 @@ const getAllInventoryItems = async (req, res) => {
       const needed = item.stepInventory
         .filter(si => si.status === 'NEEDED')
         .reduce((sum, si) => sum + si.quantity, 0);
+
+      // Add reservations from GuideInventory
+      const reservedFromGuides = item.guideItems
+        .filter(gi => gi.reserved)
+        .reduce((sum, gi) => sum + gi.quantity, 0);
+      
+      // Total reserved is sum of both sources
+      const reserved = reservedFromSteps + reservedFromGuides;
       
       // Calculate available quantity
       const available = Math.max(0, item.quantity - reserved);
@@ -292,7 +328,7 @@ const getInventoryItemById = async (req, res) => {
     }
     
     // Calculate reserved, issued, needed and available quantities
-    const reserved = item.stepInventory
+    const reservedFromSteps = item.stepInventory
       .filter(si => si.status === 'RESERVED')
       .reduce((sum, si) => sum + si.quantity, 0);
       
@@ -303,6 +339,14 @@ const getInventoryItemById = async (req, res) => {
     const needed = item.stepInventory
       .filter(si => si.status === 'NEEDED')
       .reduce((sum, si) => sum + si.quantity, 0);
+    
+    // Add reservations from GuideInventory
+    const reservedFromGuides = item.guideItems
+      .filter(gi => gi.reserved)
+      .reduce((sum, gi) => sum + gi.quantity, 0);
+    
+    // Total reserved is sum of both sources
+    const reserved = reservedFromSteps + reservedFromGuides;
     
     // Calculate actual available quantity
     const available = Math.max(0, item.quantity - reserved);
@@ -757,7 +801,7 @@ const addInventoryQuantity = async (req, res) => {
 const removeInventoryQuantity = async (req, res) => {
   try {
     const { id } = req.params;
-    const { quantity, reason, forceRemove } = req.body;
+    const { quantity, reason, forceRemove, removeReserved } = req.body;
     
     // Sprawdź, czy przedmiot istnieje
     const item = await prisma.inventoryItem.findUnique({
@@ -779,105 +823,261 @@ const removeInventoryQuantity = async (req, res) => {
       where: {
         itemId: id,
         reserved: true
+      },
+      include: {
+        guide: {
+          select: {
+            id: true,
+            title: true
+          }
+        }
       }
     });
     
     const reservedQuantity = reservedItems.reduce((total, item) => total + item.quantity, 0);
     const availableQuantity = item.quantity - reservedQuantity;
     
-    // Sprawdź, czy jest wystarczająco dostępnego towaru
-    if (quantityValue > availableQuantity && !forceRemove) {
-      return res.status(400).json({
-        message: 'Niewystarczająca ilość dostępnego towaru. Część jest zarezerwowana dla produkcji.',
-        available: availableQuantity,
-        reserved: reservedQuantity,
-        requested: quantityValue,
-        canForceRemove: req.user.permissions['inventory.manage'] >= 2
-      });
-    }
+    // Sprawdzenie uprawnień do pobierania zarezerwowanych
+    const canRemoveReserved = req.user.permissions['inventory.manage'] >= 2 || req.user.permissions['production.manage'] >= 2;
     
-    // Sprawdź, czy jest wystarczająco towaru w ogóle
-    if (quantityValue > item.quantity) {
-      return res.status(400).json({
-        message: 'Niewystarczająca ilość towaru w magazynie',
-        available: item.quantity,
-        requested: quantityValue
-      });
-    }
-    
-    // Wykonaj operację w transakcji
-    const result = await prisma.$transaction(async (tx) => {
-      // Dodaj transakcję
-      const transaction = await tx.inventoryTransaction.create({
-        data: {
-          itemId: id,
-          quantity: -quantityValue, // Ujemna wartość oznacza pobranie
-          type: 'REMOVE',
-          reason: reason || 'Pobranie z magazynu',
-          userId: req.user.id
-        }
-      });
-      
-      // Aktualizuj ilość przedmiotu
-      const updatedItem = await tx.inventoryItem.update({
-        where: { id },
-        data: {
-          quantity: { decrement: quantityValue }
-        }
-      });
-      
-      return { transaction, updatedItem };
-    });
-    
-    // Logowanie audytu
-    await logAudit({
-      userId: req.user.id,
-      action: 'remove',
-      module: 'inventory',
-      targetId: id,
-      meta: {
-        itemId: id,
-        itemName: item.name,
-        quantity: quantityValue,
-        newTotal: result.updatedItem.quantity,
-        reason,
-        forceRemove: !!forceRemove && quantityValue > availableQuantity
+    // Scenariusz 1: Pobieranie z zarezerwowanych przedmiotów
+    if (removeReserved) {
+      // Sprawdź, czy użytkownik ma uprawnienia do pobierania zarezerwowanych
+      if (!canRemoveReserved) {
+        return res.status(403).json({
+          message: 'Brak uprawnień do pobierania zarezerwowanych przedmiotów',
+          required: 'inventory.manage:2 lub production.manage:2'
+        });
       }
-    });
-    
-    // Sprawdź czy ilość spadła poniżej minimum i wyślij powiadomienie
-    if (result.updatedItem.minQuantity !== null && result.updatedItem.quantity <= result.updatedItem.minQuantity) {
-      // Znajdź użytkowników z uprawnieniami do zarządzania magazynem
-      const managersWithPermission = await prisma.userPermission.findMany({
-        where: {
-          permission: {
-            module: 'inventory',
-            action: 'manage'
-          },
-          value: { gte: 2 }
-        },
-        select: { userId: true }
+      
+      // Sprawdź, czy jest wystarczająco zarezerwowanych przedmiotów
+      if (quantityValue > reservedQuantity) {
+        return res.status(400).json({
+          message: 'Niewystarczająca ilość zarezerwowanych przedmiotów',
+          reserved: reservedQuantity,
+          requested: quantityValue
+        });
+      }
+      
+      // Wybierz rezerwacje do pobrania
+      // Najpierw sortuj według priorytetu (najniższy priorytet zostanie pobrany pierwszy)
+      const sortedReservations = [...reservedItems].sort((a, b) => {
+        // Kolejność priorytetów: brak guide (najniższy), potem po nazwie guide jako placeholder dla priorytetu
+        if (!a.guide) return -1;
+        if (!b.guide) return 1;
+        return a.guide.title.localeCompare(b.guide.title);
       });
       
-      // Wyślij powiadomienia
-      for (const manager of managersWithPermission) {
-        if (manager.userId !== req.user.id) { // Nie wysyłaj do osoby, która wykonuje operację
-          const content = `⚠️ Niski stan magazynowy: ${item.name} (${result.updatedItem.quantity} ${item.unit})`;
-          const link = `/inventory/items/${id}`;
+      // Teraz pobierz z rezerwacji
+      let remainingToRemove = quantityValue;
+      const updatedReservations = [];
+      const auditDetails = [];
+      
+      for (const reservation of sortedReservations) {
+        if (remainingToRemove <= 0) break;
+        
+        const amountToRemove = Math.min(remainingToRemove, reservation.quantity);
+        
+        // Jeśli pobieramy całość, usuń rezerwację, w przeciwnym razie aktualizuj ilość
+        if (amountToRemove >= reservation.quantity) {
+          // Usuń całą rezerwację
+          await prisma.guideInventory.delete({
+            where: {
+              id: reservation.id
+            }
+          });
           
-          await sendNotification(req.app.get('io'), prisma, manager.userId, content, link);
+          auditDetails.push({
+            guideId: reservation.guideId,
+            guideTitle: reservation.guide?.title || 'Nieznany',
+            removedQuantity: reservation.quantity,
+            removed: 'fully'
+          });
+          
+        } else {
+          // Zmniejsz rezerwację
+          await prisma.guideInventory.update({
+            where: {
+              id: reservation.id
+            },
+            data: {
+              quantity: reservation.quantity - amountToRemove
+            }
+          });
+          
+          auditDetails.push({
+            guideId: reservation.guideId,
+            guideTitle: reservation.guide?.title || 'Nieznany',
+            removedQuantity: amountToRemove,
+            removed: 'partially',
+            remaining: reservation.quantity - amountToRemove
+          });
         }
+        
+        remainingToRemove -= amountToRemove;
+        updatedReservations.push(reservation);
       }
+      
+      // Wykonaj operację w transakcji
+      const result = await prisma.$transaction(async (tx) => {
+        // Dodaj transakcję
+        const transaction = await tx.inventoryTransaction.create({
+          data: {
+            itemId: id,
+            quantity: -quantityValue, // Ujemna wartość oznacza pobranie
+            type: 'REMOVE_RESERVED',
+            reason: reason || 'Pobranie zarezerwowanych przedmiotów z magazynu',
+            userId: req.user.id
+          }
+        });
+        
+        // Aktualizuj ilość przedmiotu (pobieramy z zarezerwowanych, więc zmniejszamy ilość)
+        const updatedItem = await tx.inventoryItem.update({
+          where: { id },
+          data: {
+            quantity: { decrement: quantityValue }
+          }
+        });
+        
+        return { transaction, updatedItem };
+      });
+      
+      // Logowanie audytu
+      await logAudit({
+        userId: req.user.id,
+        action: 'remove_reserved',
+        module: 'inventory',
+        targetId: id,
+        meta: {
+          itemId: id,
+          itemName: item.name,
+          quantity: quantityValue,
+          newTotal: result.updatedItem.quantity,
+          reason,
+          reservations: auditDetails
+        }
+      });
+      
+      // Sprawdź czy ilość spadła poniżej minimum i wyślij powiadomienie
+      await checkAndNotifyLowStock(req, result.updatedItem, item);
+      
+      res.json({
+        transaction: result.transaction,
+        item: result.updatedItem,
+        message: `Pobrano ${quantityValue} ${item.unit} zarezerwowanych przedmiotów "${item.name}"`,
+        affectedReservations: auditDetails
+      });
+    } 
+    // Scenariusz 2: Standardowe pobieranie (tylko z dostępnych)
+    else {
+      // Sprawdź, czy jest wystarczająco dostępnego towaru
+      if (quantityValue > availableQuantity && !forceRemove) {
+        return res.status(400).json({
+          message: 'Niewystarczająca ilość dostępnego towaru. Część jest zarezerwowana dla produkcji.',
+          available: availableQuantity,
+          reserved: reservedQuantity,
+          requested: quantityValue,
+          canForceRemove: canRemoveReserved,
+          canRemoveReserved: canRemoveReserved
+        });
+      }
+      
+      // Sprawdź, czy jest wystarczająco towaru w ogóle
+      if (quantityValue > item.quantity) {
+        return res.status(400).json({
+          message: 'Niewystarczająca ilość towaru w magazynie',
+          available: item.quantity,
+          requested: quantityValue
+        });
+      }
+      
+      // Sprawdź, czy wymuszamy pobranie zarezerwowanych
+      if (forceRemove && !canRemoveReserved) {
+        return res.status(403).json({
+          message: 'Brak uprawnień do wymuszenia pobrania zarezerwowanych przedmiotów',
+          required: 'inventory.manage:2 lub production.manage:2'
+        });
+      }
+      
+      // Wykonaj operację w transakcji
+      const result = await prisma.$transaction(async (tx) => {
+        // Dodaj transakcję
+        const transaction = await tx.inventoryTransaction.create({
+          data: {
+            itemId: id,
+            quantity: -quantityValue, // Ujemna wartość oznacza pobranie
+            type: forceRemove ? 'FORCE_REMOVE' : 'REMOVE',
+            reason: reason || 'Pobranie z magazynu',
+            userId: req.user.id
+          }
+        });
+        
+        // Aktualizuj ilość przedmiotu
+        const updatedItem = await tx.inventoryItem.update({
+          where: { id },
+          data: {
+            quantity: { decrement: quantityValue }
+          }
+        });
+        
+        return { transaction, updatedItem };
+      });
+      
+      // Logowanie audytu
+      await logAudit({
+        userId: req.user.id,
+        action: forceRemove ? 'force_remove' : 'remove',
+        module: 'inventory',
+        targetId: id,
+        meta: {
+          itemId: id,
+          itemName: item.name,
+          quantity: quantityValue,
+          newTotal: result.updatedItem.quantity,
+          reason,
+          forceRemove: !!forceRemove && quantityValue > availableQuantity
+        }
+      });
+      
+      // Sprawdź czy ilość spadła poniżej minimum i wyślij powiadomienie
+      await checkAndNotifyLowStock(req, result.updatedItem, item);
+      
+      res.json({
+        transaction: result.transaction,
+        item: result.updatedItem,
+        message: `Pobrano ${quantityValue} ${item.unit} z przedmiotu "${item.name}"${forceRemove ? ' (wymuszono)' : ''}`
+      });
     }
-    
-    res.json({
-      transaction: result.transaction,
-      item: result.updatedItem,
-      message: `Pobrano ${quantityValue} ${item.unit} z przedmiotu "${item.name}"`
-    });
   } catch (error) {
     console.error('Błąd podczas pobierania ilości:', error);
     res.status(500).json({ message: 'Błąd podczas pobierania ilości przedmiotu' });
+  }
+};
+
+// Pomocnicza funkcja do sprawdzania niskiego stanu i wysyłania powiadomień
+const checkAndNotifyLowStock = async (req, updatedItem, originalItem) => {
+  if (updatedItem.minQuantity !== null && updatedItem.quantity <= updatedItem.minQuantity) {
+    // Znajdź użytkowników z uprawnieniami do zarządzania magazynem
+    const managersWithPermission = await prisma.userPermission.findMany({
+      where: {
+        permission: {
+          module: 'inventory',
+          action: 'manage'
+        },
+        value: { gte: 2 }
+      },
+      select: { userId: true }
+    });
+    
+    // Wyślij powiadomienia
+    for (const manager of managersWithPermission) {
+      if (manager.userId !== req.user.id) { // Nie wysyłaj do osoby, która wykonuje operację
+        const content = `⚠️ Niski stan magazynowy: ${originalItem.name} (${updatedItem.quantity} ${originalItem.unit})`;
+        const link = `/inventory/items/${originalItem.id}`;
+        
+        await sendNotification(req.app.get('io'), prisma, manager.userId, content, link);
+      }
+    }
   }
 };
 
@@ -1479,7 +1679,9 @@ const getProductionRequests = async (req, res) => {
     const where = {};
     
     if (status) {
-      where.status = status;
+      where.status = {
+        in: Array.isArray(status) ? status : [status]
+      };
     }
     
     // Get step inventory requests
@@ -1503,7 +1705,8 @@ const getProductionRequests = async (req, res) => {
                   title: true,
                   barcode: true,
                   deadline: true,
-                  priority: true
+                  priority: true,
+                  status: true
                 }
               }
             }
@@ -1514,13 +1717,59 @@ const getProductionRequests = async (req, res) => {
               name: true,
               barcode: true,
               unit: true,
-              quantity: true
+              quantity: true,
+              minQuantity: true
             }
           }
         }
       }),
       prisma.stepInventory.count({ where })
     ]);
+    
+    // Get guide inventory reservations
+    const guideReservations = await prisma.guideInventory.findMany({
+      where: {
+        reserved: true
+      },
+      include: {
+        guide: {
+          select: {
+            id: true,
+            title: true,
+            barcode: true,
+            deadline: true,
+            priority: true,
+            status: true
+          }
+        },
+        item: {
+          select: {
+            id: true,
+            name: true,
+            barcode: true,
+            unit: true,
+            quantity: true,
+            minQuantity: true
+          }
+        }
+      }
+    });
+    
+    // Convert guide reservations to same format as step requests
+    const guideRequests = guideReservations.map(reservation => ({
+      id: `guide_${reservation.id}`,
+      status: 'RESERVED',
+      quantity: reservation.quantity,
+      step: {
+        id: null,
+        title: 'Rezerwacja przewodnika',
+        guide: reservation.guide
+      },
+      item: reservation.item
+    }));
+    
+    // Combine both types of requests
+    const allRequests = [...requests, ...guideRequests];
     
     // Get counts by status
     const statusCounts = await prisma.stepInventory.groupBy({
@@ -1541,17 +1790,20 @@ const getProductionRequests = async (req, res) => {
       counts[count.status] = count._count._all;
     });
     
+    // Add guide reservations to RESERVED count
+    counts.RESERVED += guideReservations.length;
+    
     res.json({
-      requests,
+      requests: allRequests,
       stats: {
         counts,
-        total
+        total: total + guideReservations.length
       },
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit)
+        total: total + guideReservations.length,
+        pages: Math.ceil((total + guideReservations.length) / limit)
       }
     });
   } catch (error) {
@@ -1812,6 +2064,145 @@ const getGuideInventoryReport = async (req, res) => {
   }
 };
 
+// Get inventory items for a specific guide
+const getGuideInventoryItems = async (req, res) => {
+  try {
+    const { guideId } = req.params;
+    
+    // Check if guide exists
+    const guide = await prisma.productionGuide.findUnique({
+      where: { id: guideId }
+    });
+    
+    if (!guide) {
+      return res.status(404).json({ message: 'Production guide not found' });
+    }
+    
+    // Get all inventory items assigned to this guide
+    const items = await prisma.guideInventory.findMany({
+      where: { guideId },
+      include: {
+        item: {
+          select: {
+            id: true,
+            name: true,
+            barcode: true,
+            unit: true,
+            quantity: true
+          }
+        },
+        withdrawnBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+    
+    res.json({
+      guide: {
+        id: guide.id,
+        title: guide.title
+      },
+      items
+    });
+  } catch (error) {
+    console.error('Error getting guide inventory items:', error);
+    res.status(500).json({ message: 'Error retrieving guide inventory items' });
+  }
+};
+
+// Korekta ilości przedmiotu w magazynie
+const adjustInventoryQuantity = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quantity, reason } = req.body;
+
+    // Sprawdź, czy użytkownik ma odpowiednie uprawnienia (wymagamy wyższego poziomu)
+    const canAdjust = hasPermission(req.user.permissions, 'inventory', 'manage', 2);
+    if (!canAdjust) {
+      return res.status(403).json({ 
+        message: 'Brak uprawnień do wykonania korekty ilości',
+        required: 'inventory.manage:2'
+      });
+    }
+    
+    // Sprawdź, czy przedmiot istnieje
+    const item = await prisma.inventoryItem.findUnique({
+      where: { id }
+    });
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Przedmiot magazynowy nie znaleziony' });
+    }
+    
+    // Walidacja ilości
+    const newQuantity = parseFloat(quantity);
+    if (isNaN(newQuantity) || newQuantity < 0) {
+      return res.status(400).json({ message: 'Ilość musi być liczbą nieujemną' });
+    }
+    
+    // Oblicz różnicę ilości
+    const quantityDiff = newQuantity - item.quantity;
+    
+    // Wykonaj operację w transakcji
+    const result = await prisma.$transaction(async (tx) => {
+      // Dodaj transakcję
+      const transaction = await tx.inventoryTransaction.create({
+        data: {
+          itemId: id,
+          quantity: quantityDiff,
+          type: 'ADJUST',
+          reason: reason || 'Korekta ilości w magazynie',
+          userId: req.user.id
+        }
+      });
+      
+      // Aktualizuj ilość przedmiotu (ustaw dokładną wartość)
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id },
+        data: {
+          quantity: newQuantity
+        }
+      });
+      
+      return { transaction, updatedItem };
+    });
+    
+    // Logowanie audytu
+    await logAudit({
+      userId: req.user.id,
+      action: 'adjust',
+      module: 'inventory',
+      targetId: id,
+      meta: {
+        itemId: id,
+        itemName: item.name,
+        previousQuantity: item.quantity,
+        newQuantity: newQuantity,
+        difference: quantityDiff,
+        reason
+      }
+    });
+    
+    // Sprawdź czy ilość spadła poniżej minimum i wyślij powiadomienie
+    if (newQuantity < item.quantity) {
+      await checkAndNotifyLowStock(req, result.updatedItem, item);
+    }
+    
+    res.json({
+      transaction: result.transaction,
+      item: result.updatedItem,
+      message: `Skorygowano ilość przedmiotu "${item.name}" z ${item.quantity} na ${newQuantity} ${item.unit}`
+    });
+  } catch (error) {
+    console.error('Błąd podczas korekty ilości:', error);
+    res.status(500).json({ message: 'Błąd podczas korekty ilości przedmiotu' });
+  }
+};
+
 module.exports = {
   handleFileUpload,
   getAllInventoryItems,
@@ -1821,6 +2212,7 @@ module.exports = {
   deleteInventoryItem,
   addInventoryQuantity,
   removeInventoryQuantity,
+  adjustInventoryQuantity,
   addItemsToProductionGuide,
   removeItemFromProductionGuide,
   updateReservationStatus,
@@ -1829,5 +2221,6 @@ module.exports = {
   getAllInventoryTransactions,
   getProductionRequests,
   processProductionRequest,
-  getGuideInventoryReport
+  getGuideInventoryReport,
+  getGuideInventoryItems
 };

@@ -10,12 +10,12 @@ const StartWorkButton = ({ step }) => {
   const startWorkMutation = useMutation({
     mutationFn: (stepId) => productionApi.startWorkOnStep(stepId),
     onSuccess: () => {
-      toast.success('Work started successfully!');
+      toast.success('Praca rozpoczęta pomyślnie!');
       queryClient.invalidateQueries(['guide']);
       queryClient.invalidateQueries(['step', step.id]);
     },
     onError: (error) => {
-      toast.error(`Error starting work: ${error.message}`);
+      toast.error(`Błąd rozpoczynania pracy: ${error.message}`);
     }
   });
 
@@ -64,7 +64,7 @@ const StartWorkButton = ({ step }) => {
           d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
         />
       </svg>
-      {startWorkMutation.isLoading ? 'Starting...' : 'Start Work'}
+      {startWorkMutation.isLoading ? 'Rozpoczynanie...' : 'Rozpocznij pracę'}
     </button>
   );
 };

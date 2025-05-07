@@ -15,6 +15,13 @@ router.get(
   productionController.getAllProductionGuides
 );
 
+// Get archived guides - MOVED UP to be before the /:id route
+router.get(
+  '/guides/archived',
+  checkPermission('production', 'read', 1),
+  productionController.getArchivedGuides
+);
+
 // Get a single guide
 router.get(
   '/guides/:id',
@@ -43,13 +50,6 @@ router.put(
   '/guides/:id/archive',
   checkPermission('production', 'update', 1),
   productionController.archiveGuide
-);
-
-// Get archived guides
-router.get(
-  '/guides/archived',
-  checkPermission('production', 'read', 1),
-  productionController.getArchivedGuides
 );
 
 // Unarchive a guide
@@ -236,6 +236,15 @@ router.delete(
   '/steps/:stepId/assign/:userId',
   checkPermission('production', 'assign', 1),
   productionController.removeUserFromStep
+);
+
+// --- Guide Inventory Routes ---
+// Withdraw reserved items from inventory for a guide (only for assigned users)
+router.post(
+  '/guides/:guideId/withdraw-items',
+  checkPermission('production', 'work', 1),
+  checkPermission('inventory', 'issue', 1),
+  productionController.withdrawReservedItems
 );
 
 module.exports = router;

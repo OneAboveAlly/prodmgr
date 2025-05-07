@@ -309,8 +309,6 @@ exports.getNotificationById = async (req, res) => {
   res.json(notif);
 };
 
-
-
 exports.deleteNotification = async (req, res) => {
   const { id } = req.params;
   
@@ -365,3 +363,184 @@ exports.updateNotification = async (req, res) => {
     res.status(500).json({ message: 'Błąd aktualizacji' });
   }
 };
+
+// Funkcja pomocnicza do obsługi powiadomień produkcyjnych opartych na uprawnieniach
+const createProductionNotification = async (io, data) => {
+  const { 
+    type, // GUIDE_COMPLETED, STEP_COMPLETED, GUIDE_ASSIGNED, itd.
+    targetId, // ID przewodnika/kroku
+    content, // Treść powiadomienia
+    link, // Link do zasobu
+    createdById, // ID użytkownika, który wykonał akcję
+    specificUserIds = [] // Lista konkretnych użytkowników do powiadomienia
+  } = data;
+
+  try {
+    // 1. Znajdź wszystkich użytkowników z odpowiednimi uprawnieniami
+    let userIdsWithPermission = [];
+    
+    // Pobierz użytkowników z konkretnymi uprawnieniami w zależności od typu
+    if (specificUserIds.length === 0) {
+      const permissionMap = {
+        GUIDE_COMPLETED: 'production.view', // Użytkownicy z uprawnieniem do podglądu produkcji
+        STEP_COMPLETED: 'production.view',
+        GUIDE_ASSIGNED: 'production.assign', // Użytkownicy z uprawnieniem do przypisywania
+        GUIDE_ARCHIVED: 'production.archive', // Użytkownicy z uprawnieniem do archiwizacji
+        GUIDE_CREATED: 'production.create' // Użytkownicy z uprawnieniem do tworzenia
+      };
+
+      const permissionNeeded = permissionMap[type] || 'production.view';
+
+      // Pobieranie wszystkich użytkowników z danym uprawnieniem
+      const usersWithPermission = await prisma.user.findMany({
+        where: {
+          permissions: {
+            path: [permissionNeeded],
+            gte: 1
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+
+      // Pobierz administratorów (rola 'admin')
+      const admins = await prisma.user.findMany({
+        where: {
+          roles: {
+            some: {
+              name: 'admin'
+            }
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+
+      // Łączymy użytkowników z uprawnieniami i administratorów
+      const allUsersIds = [
+        ...usersWithPermission.map(u => u.id),
+        ...admins.map(a => a.id)
+      ];
+
+      // Deduplikacja ID
+      userIdsWithPermission = [...new Set(allUsersIds)];
+    } else {
+      // Użyj konkretnej listy użytkowników, jeśli została podana
+      userIdsWithPermission = specificUserIds;
+    }
+
+    // Usuń użytkownika, który wykonał akcję z listy odbiorców
+    if (createdById) {
+      userIdsWithPermission = userIdsWithPermission.filter(id => id !== createdById);
+    }
+
+    // 2. Utwórz powiadomienia dla wszystkich użytkowników
+    const notifications = [];
+    for (const userId of userIdsWithPermission) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId,
+          content,
+          link,
+          type: 'PRODUCTION',
+          createdById: createdById || null,
+          metadata: {
+            productionType: type,
+            targetId
+          }
+        }
+      });
+
+      notifications.push(notification);
+
+      // 3. Wyślij powiadomienie przez socket, jeśli dostępny
+      if (io) {
+        io.emit(`notification:${userId}`, notification);
+      }
+    }
+
+    return notifications;
+  } catch (error) {
+    console.error('❌ Błąd tworzenia powiadomień produkcyjnych:', error);
+    return [];
+  }
+};
+
+// Funkcja do tworzenia powiadomień o ukończeniu przewodnika
+exports.notifyGuideCompleted = async (req, res) => {
+  const { guideId, guideName } = req.body;
+  const io = req.app.get('io');
+
+  try {
+    const notifications = await createProductionNotification(io, {
+      type: 'GUIDE_COMPLETED',
+      targetId: guideId,
+      content: `🏆 Przewodnik "${guideName}" został ukończony`,
+      link: `/production/guides/${guideId}`,
+      createdById: req.user.id
+    });
+
+    res.status(201).json({ 
+      message: 'Powiadomienia o ukończeniu przewodnika zostały wysłane', 
+      count: notifications.length 
+    });
+  } catch (error) {
+    console.error('❌ Błąd powiadomień o ukończeniu przewodnika:', error);
+    res.status(500).json({ message: 'Błąd podczas wysyłania powiadomień' });
+  }
+};
+
+// Funkcja do tworzenia powiadomień o ukończeniu kroku
+exports.notifyStepCompleted = async (req, res) => {
+  const { stepId, stepName, guideId, guideName } = req.body;
+  const io = req.app.get('io');
+
+  try {
+    const notifications = await createProductionNotification(io, {
+      type: 'STEP_COMPLETED',
+      targetId: stepId,
+      content: `✅ Krok "${stepName}" w przewodniku "${guideName}" został ukończony`,
+      link: `/production/guides/${guideId}`,
+      createdById: req.user.id
+    });
+
+    res.status(201).json({ 
+      message: 'Powiadomienia o ukończeniu kroku zostały wysłane', 
+      count: notifications.length 
+    });
+  } catch (error) {
+    console.error('❌ Błąd powiadomień o ukończeniu kroku:', error);
+    res.status(500).json({ message: 'Błąd podczas wysyłania powiadomień' });
+  }
+};
+
+// Funkcja do tworzenia powiadomień o przypisaniu do przewodnika
+exports.notifyGuideAssigned = async (req, res) => {
+  const { guideId, guideName, assignedUserIds } = req.body;
+  const io = req.app.get('io');
+
+  try {
+    // Tworzenie powiadomień dla przypisanych użytkowników
+    const notifications = await createProductionNotification(io, {
+      type: 'GUIDE_ASSIGNED',
+      targetId: guideId,
+      content: `📋 Zostałeś przypisany do przewodnika "${guideName}"`,
+      link: `/production/guides/${guideId}`,
+      createdById: req.user.id,
+      specificUserIds: assignedUserIds // Tylko dla konkretnych użytkowników
+    });
+
+    res.status(201).json({ 
+      message: 'Powiadomienia o przypisaniu zostały wysłane', 
+      count: notifications.length 
+    });
+  } catch (error) {
+    console.error('❌ Błąd powiadomień o przypisaniu do przewodnika:', error);
+    res.status(500).json({ message: 'Błąd podczas wysyłania powiadomień' });
+  }
+};
+
+// Ekspozycja funkcji pomocniczej dla innych kontrolerów
+exports.createProductionNotification = createProductionNotification;

@@ -2,6 +2,36 @@ const { PrismaClient } = require('@prisma/client');
 const { logAudit } = require('../utils/auditLogger');
 const prisma = new PrismaClient();
 
+// Cache dla modułów z uprawnieniami, żeby uniknąć ciągłego zapytania do bazy
+let permissionsCache = {
+  timestamp: 0,
+  data: null,
+  ttl: 5 * 60 * 1000 // 5 minut w milisekundach
+};
+
+// Funkcja do czyszczenia cache'u
+const clearPermissionsCache = () => {
+  permissionsCache = {
+    timestamp: 0,
+    data: null,
+    ttl: 5 * 60 * 1000
+  };
+};
+
+// Pomocnicza funkcja do grupowania uprawnień według modułu
+const groupPermissionsByModule = (permissions) => {
+  const groupedByModule = {};
+  
+  permissions.forEach(permission => {
+    if (!groupedByModule[permission.module]) {
+      groupedByModule[permission.module] = [];
+    }
+    groupedByModule[permission.module].push(permission);
+  });
+  
+  return groupedByModule;
+};
+
 // Get all roles with pagination
 const getAllRoles = async (req, res) => {
   try {
@@ -85,6 +115,15 @@ const getAllRoles = async (req, res) => {
 // Get all permissions grouped by module
 const getAllPermissions = async (req, res) => {
   try {
+    const now = Date.now();
+    const forceRefresh = req.query.refresh === 'true';
+    
+    // Sprawdź, czy cache jest aktualny
+    if (!forceRefresh && permissionsCache.data && now - permissionsCache.timestamp < permissionsCache.ttl) {
+      return res.json(permissionsCache.data);
+    }
+    
+    // Jeśli nie, pobierz dane z bazy
     const permissions = await prisma.permission.findMany({
       orderBy: [
         { module: 'asc' },
@@ -92,15 +131,18 @@ const getAllPermissions = async (req, res) => {
       ]
     });
     
-    // Group permissions by module
-    const groupedByModule = {};
+    // Grupuj uprawnienia według modułu
+    const groupedByModule = groupPermissionsByModule(permissions);
     
-    permissions.forEach(permission => {
-      if (!groupedByModule[permission.module]) {
-        groupedByModule[permission.module] = [];
-      }
-      groupedByModule[permission.module].push(permission);
-    });
+    // Zaktualizuj cache
+    permissionsCache = {
+      timestamp: now,
+      data: {
+        permissions,
+        groupedByModule
+      },
+      ttl: 5 * 60 * 1000
+    };
     
     // 🔥 Logujemy kto i co zrobił
     await logAudit({
@@ -108,7 +150,7 @@ const getAllPermissions = async (req, res) => {
       action: 'read',
       module: 'permissions',
       targetId: null,
-      meta: { count: permissions.length }
+      meta: { count: permissions.length, forceRefresh }
     });
     
     res.json({
@@ -118,6 +160,169 @@ const getAllPermissions = async (req, res) => {
   } catch (error) {
     console.error('Error getting permissions:', error);
     res.status(500).json({ message: 'Error retrieving permissions' });
+  }
+};
+
+// Force refresh permissions cache
+const refreshPermissionsCache = async (req, res) => {
+  try {
+    clearPermissionsCache();
+    
+    // Pobierz zaktualizowane dane
+    const permissions = await prisma.permission.findMany({
+      orderBy: [
+        { module: 'asc' },
+        { action: 'asc' }
+      ]
+    });
+    
+    // Lista polskich opisów uprawnień
+    const polishDescriptions = {
+      // chat permissions
+      'chat.view': 'Dostęp do funkcji czatu',
+      'chat.send': 'Wysyłanie wiadomości',
+      'chat.delete': 'Usuwanie własnych wiadomości',
+      'chat.admin': 'Administrowanie wszystkimi wiadomościami czatu',
+      
+      // dashboard permissions
+      'dashboard.read': 'Podgląd panelu produkcji i analityki',
+      
+      // leave permissions
+      'leave.approve': 'Zatwierdzanie lub odrzucanie wniosków urlopowych',
+      'leave.create': 'Tworzenie wniosków urlopowych',
+      'leave.delete': 'Usuwanie wniosków urlopowych',
+      'leave.manageTypes': 'Zarządzanie typami urlopów',
+      'leave.read': 'Podgląd wniosków urlopowych',
+      'leave.update': 'Aktualizacja wniosków urlopowych',
+      'leave.viewAll': 'Podgląd wniosków urlopowych wszystkich użytkowników',
+      
+      // permissions management
+      'permissions.assign': 'Przydzielanie uprawnień',
+      'permissions.read': 'Podgląd uprawnień',
+      
+      // roles permissions
+      'roles.create': 'Tworzenie ról',
+      'roles.delete': 'Usuwanie ról',
+      'roles.read': 'Podgląd ról',
+      'roles.update': 'Aktualizacja ról',
+      
+      // scheduling permissions
+      'scheduling.create': 'Tworzenie harmonogramów produkcji i przydziałów',
+      'scheduling.delete': 'Usuwanie harmonogramów produkcji i przydziałów',
+      'scheduling.read': 'Podgląd harmonogramów produkcji',
+      'scheduling.update': 'Aktualizacja harmonogramów produkcji i przydziałów',
+      
+      // time tracking permissions
+      'timeTracking.create': 'Tworzenie sesji śledzenia czasu',
+      'timeTracking.delete': 'Usuwanie sesji śledzenia czasu',
+      'timeTracking.exportReports': 'Eksportowanie raportów śledzenia czasu',
+      'timeTracking.manageSettings': 'Zarządzanie ustawieniami śledzenia czasu',
+      'timeTracking.read': 'Podgląd śledzenia czasu',
+      'timeTracking.update': 'Aktualizacja sesji śledzenia czasu',
+      'timeTracking.viewAll': 'Podgląd śledzenia czasu wszystkich użytkowników',
+      'timeTracking.viewReports': 'Podgląd raportów śledzenia czasu',
+      
+      // users permissions
+      'users.create': 'Tworzenie użytkowników',
+      'users.delete': 'Usuwanie użytkowników',
+      'users.read': 'Podgląd użytkowników',
+      'users.update': 'Aktualizacja użytkowników',
+      
+      // quality permissions
+      'quality.create': 'Tworzenie szablonów kontroli jakości i przeprowadzanie kontroli',
+      'quality.read': 'Podgląd szablonów kontroli jakości i wyników',
+      'quality.update': 'Aktualizacja szablonów kontroli jakości',
+      'quality.delete': 'Usuwanie szablonów kontroli jakości',
+
+      // auditLogs permissions
+      'auditLogs.read': 'Przeglądanie dziennika audytu',
+      'auditLogs.export': 'Eksportowanie dziennika audytu',
+
+      // OCR permissions
+      'ocr.create': 'Tworzenie nowych skanów OCR',
+      'ocr.read': 'Przeglądanie wyników OCR',
+      'ocr.update': 'Edycja wyników OCR',
+      'ocr.delete': 'Usuwanie skanów OCR',
+      'ocr.process': 'Przetwarzanie obrazów za pomocą OCR',
+      'ocr.manage': 'Zarządzanie wynikami OCR',
+
+      // production permissions
+      'production.create': 'Tworzenie nowych przewodników produkcyjnych',
+      'production.read': 'Podgląd przewodników produkcyjnych',
+      'production.update': 'Aktualizacja przewodników produkcyjnych',
+      'production.delete': 'Usuwanie przewodników produkcyjnych',
+      'production.archive': 'Archiwizacja przewodników produkcyjnych',
+      'production.assign': 'Przypisywanie użytkowników do przewodników',
+      'production.work': 'Praca nad przewodnikami (rejestrowanie czasu)',
+      'production.manage': 'Zmiana statusów, zarządzanie priorytetami',
+      'production.manageAll': 'Zaawansowane zarządzanie produkcją i przewodnikami',
+      'production.manualWork': 'Dodawanie ręcznych wpisów pracy, datowanie wsteczne',
+      'production.view': 'Podgląd przewodników produkcyjnych',
+
+      // inventory permissions
+      'inventory.create': 'Tworzenie nowych pozycji magazynowych',
+      'inventory.read': 'Podgląd magazynu i stanów magazynowych',
+      'inventory.update': 'Aktualizacja pozycji magazynowych',
+      'inventory.delete': 'Usuwanie pozycji magazynowych',
+      'inventory.reserve': 'Rezerwowanie przedmiotów magazynowych',
+      'inventory.issue': 'Wydawanie przedmiotów z magazynu',
+      'inventory.manage': 'Zarządzanie zarezerwowanymi przedmiotami i poziomami magazynowymi',
+
+      // statistics permissions
+      'statistics.read': 'Podgląd podstawowych statystyk',
+      'statistics.viewReports': 'Podgląd szczegółowych raportów i analiz',
+      'statistics.export': 'Eksportowanie statystyk i raportów',
+
+      // admin permissions
+      'admin.access': 'Specjalne uprawnienie dostępu administratora',
+      '*.all': 'Uprawnienie ogólne - pełny dostęp do wszystkiego',
+      '*.read': 'Uprawnienie do podglądu danych w każdym module',
+    };
+    
+    // Aktualizuj opisy uprawnień w bazie danych
+    let updatedCount = 0;
+    for (const permission of permissions) {
+      const key = `${permission.module}.${permission.action}`;
+      if (polishDescriptions[key]) {
+        await prisma.permission.update({
+          where: { id: permission.id },
+          data: { description: polishDescriptions[key] }
+        });
+        updatedCount++;
+      }
+    }
+    
+    // Grupuj uprawnienia według modułu
+    const groupedByModule = groupPermissionsByModule(permissions);
+    
+    // Zaktualizuj cache
+    permissionsCache = {
+      timestamp: Date.now(),
+      data: {
+        permissions,
+        groupedByModule
+      },
+      ttl: 5 * 60 * 1000
+    };
+    
+    // 🔥 Logujemy kto i co zrobił
+    await logAudit({
+      userId: req.user.id,
+      action: 'refresh',
+      module: 'permissions',
+      targetId: null,
+      meta: { count: permissions.length, updatedDescriptions: updatedCount }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Permissions cache refreshed successfully',
+      count: permissions.length,
+      updatedDescriptions: updatedCount
+    });
+  } catch (error) {
+    console.error('Error refreshing permissions cache:', error);
+    res.status(500).json({ message: 'Error refreshing permissions cache' });
   }
 };
 
@@ -402,9 +607,10 @@ const deleteRole = async (req, res) => {
 
 module.exports = {
   getAllRoles,
+  getAllPermissions,
+  refreshPermissionsCache,
   getRoleById,
   createRole,
   updateRole,
-  deleteRole,
-  getAllPermissions
+  deleteRole
 };

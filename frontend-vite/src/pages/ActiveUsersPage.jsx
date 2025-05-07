@@ -13,13 +13,13 @@ const ActiveUsersPage = () => {
     searchTerm: ''
   });
   
-  // Handle filter changes
+  // Obsługa zmian filtrów
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
-  // Reset filters
+  // Resetowanie filtrów
   const resetFilters = () => {
     setFilters({
       status: 'all',
@@ -29,13 +29,13 @@ const ActiveUsersPage = () => {
     });
   };
   
-  // If the user doesn't have the required permission, show a message
+  // Jeśli użytkownik nie ma wymaganych uprawnień, wyświetl komunikat
   if (!hasPermission('timeTracking', 'viewAll')) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <strong className="font-bold">Access Denied:</strong>
-          <span className="block"> You do not have permission to view all users' activity.</span>
+          <strong className="font-bold">Odmowa dostępu:</strong>
+          <span className="block">Nie masz uprawnień do przeglądania aktywności wszystkich użytkowników.</span>
         </div>
       </div>
     );
@@ -44,24 +44,24 @@ const ActiveUsersPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">User Activity Monitor</h1>
+        <h1 className="text-2xl font-bold">Monitor aktywności pracowników</h1>
         <div className="flex space-x-2">
           <Link 
             to="/time-tracking/reports"
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
           >
-            View Reports
+            Przeglądaj raporty
           </Link>
           <Link 
             to="/time-tracking"
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
           >
-            Back to Time Tracking
+            Powrót do śledzenia czasu
           </Link>
         </div>
       </div>
       
-      {/* Filter Panel */}
+      {/* Panel filtrów */}
       <div className="mb-6 bg-white rounded-lg shadow-md p-4">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -72,14 +72,14 @@ const ActiveUsersPage = () => {
               onChange={handleFilterChange}
               className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             >
-              <option value="all">All</option>
-              <option value="active">Working</option>
-              <option value="inactive">Not Working</option>
+              <option value="all">Wszyscy</option>
+              <option value="active">Pracujący</option>
+              <option value="inactive">Niepracujący</option>
             </select>
           </div>
           
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Data od</label>
             <input 
               type="date" 
               name="dateFrom"
@@ -90,7 +90,7 @@ const ActiveUsersPage = () => {
           </div>
           
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Data do</label>
             <input 
               type="date" 
               name="dateTo"
@@ -101,13 +101,13 @@ const ActiveUsersPage = () => {
           </div>
           
           <div className="flex-1 min-w-[250px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search Users</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Szukaj pracowników</label>
             <input 
               type="text" 
               name="searchTerm"
               value={filters.searchTerm}
               onChange={handleFilterChange}
-              placeholder="Name, email or login"
+              placeholder="Imię, email lub login"
               className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
@@ -117,21 +117,21 @@ const ActiveUsersPage = () => {
               onClick={resetFilters}
               className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
             >
-              Reset Filters
+              Resetuj filtry
             </button>
           </div>
         </div>
       </div>
       
-      {/* Active Users Tracker */}
+      {/* Monitor aktywnych użytkowników */}
       <ActiveUsersTracker filters={filters} />
       
-      {/* Debug Information */}
+      {/* Informacje pomocnicze */}
       <div className="mt-6 bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-lg font-semibold mb-4">Troubleshooting Information</h2>
+        <h2 className="text-lg font-semibold mb-4">Informacje rozwiązywania problemów</h2>
         <p className="text-gray-600 mb-4">
-          This panel is designed to help administrators diagnose issues with time tracking data visibility. 
-          It shows real-time activity status of all users and their recent sessions.
+          Ten panel jest przeznaczony do pomocy administratorom w diagnozowaniu problemów z widocznością danych śledzenia czasu.
+          Pokazuje status aktywności wszystkich użytkowników w czasie rzeczywistym oraz ich ostatnie sesje.
         </p>
         
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
@@ -142,14 +142,14 @@ const ActiveUsersPage = () => {
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">Troubleshooting Tips</h3>
+              <h3 className="text-sm font-medium text-yellow-800">Wskazówki rozwiązywania problemów</h3>
               <div className="mt-2 text-sm text-yellow-700">
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>Ensure time tracking sessions are properly ended by users</li>
-                  <li>Check that date filters in reports include the relevant time period</li>
-                  <li>Verify that the correct users are selected when generating reports</li>
-                  <li>If data is missing, try clearing browser cache and cookies</li>
-                  <li>For database issues, contact your system administrator</li>
+                  <li>Upewnij się, że sesje śledzenia czasu są prawidłowo zakończone przez użytkowników</li>
+                  <li>Sprawdź, czy filtry dat w raportach obejmują odpowiedni okres</li>
+                  <li>Sprawdź, czy wybrano właściwych użytkowników podczas generowania raportów</li>
+                  <li>Jeśli brakuje danych, spróbuj wyczyścić pamięć podręczną przeglądarki i pliki cookie</li>
+                  <li>W przypadku problemów z bazą danych skontaktuj się z administratorem systemu</li>
                 </ul>
               </div>
             </div>

@@ -208,16 +208,16 @@ const ProductionGuideEditPage = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               >
-                <option value="DRAFT">Draft</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
+                <option value="DRAFT">Szkic</option>
+                <option value="IN_PROGRESS">W trakcie</option>
+                <option value="COMPLETED">Zakończony</option>
+                <option value="CANCELLED">Anulowany</option>
               </select>
             </div>
             
             <div>
               <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-1">
-                Priority
+                Priorytet
               </label>
               <select
                 id="priority"
@@ -226,10 +226,10 @@ const ProductionGuideEditPage = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               >
-                <option value="LOW">Low</option>
-                <option value="NORMAL">Normal</option>
-                <option value="HIGH">High</option>
-                <option value="CRITICAL">Critical</option>
+                <option value="LOW">Niski</option>
+                <option value="NORMAL">Normalny</option>
+                <option value="HIGH">Wysoki</option>
+                <option value="CRITICAL">Krytyczny</option>
               </select>
             </div>
             

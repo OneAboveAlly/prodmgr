@@ -7,6 +7,15 @@ const router = express.Router();
 // All routes require authentication
 router.use(checkAuth);
 
+// Get current user profile - authenticated user
+router.get('/profile/me', userController.getMyProfile);
+
+// Update current user profile - authenticated user
+router.put('/profile', userController.updateMyProfile);
+
+// Change current user password - authenticated user
+router.put('/password', userController.changePassword);
+
 // Get all users - requires users.read permission
 router.get(
   '/',
@@ -40,6 +49,13 @@ router.delete(
   '/:id',
   checkPermission('users', 'delete', 2), // Higher permission level for deletion
   userController.deleteUser
+);
+
+// Get users with today's birthdays
+router.get(
+  '/birthdays/today',
+  checkAuth, // Tylko zalogowani użytkownicy mogą widzieć urodziny
+  userController.getTodayBirthdays
 );
 
 module.exports = router;

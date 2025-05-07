@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PermissionDebugger from '../common/PermissionDebugger';
 import useSocketNotifications from '../../modules/notifications/hooks/useSocketNotifications'; // Fixed import path
 import NotificationBadge from '../NotificationBadge'; // Import the NotificationBadge component
-import { MessageCircle } from 'lucide-react'; // Import MessageCircle icon from lucide-react
+import { MessageCircle, Clock, User, LogOut, ChevronDown } from 'lucide-react'; // Import MessageCircle, Clock, User, LogOut, ChevronDown icons from lucide-react
+import BarcodeWidget from '../../modules/barcode'; // Import the BarcodeWidget component
 
 
 const MainLayout = ({ children }) => {
@@ -12,10 +13,58 @@ const MainLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Aktualizacja zegara co sekundę
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
 
   useSocketNotifications(); // 🔥 aktywacja socketów
 
+  // Formatowanie czasu
+  const formatTime = (date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
   
+  // Formatowanie daty
+  const formatDate = (date) => {
+    return date.toLocaleDateString([], { 
+      weekday: 'short', 
+      day: 'numeric', 
+      month: 'short' 
+    });
+  };
+
+  // Pobierz nazwę głównej roli użytkownika
+  const getUserRoleName = () => {
+    if (!user || !user.roles || user.roles.length === 0) return "Użytkownik";
+    
+    // Znajdź rolę z najwyższym poziomem dostępu (na podstawie właściwości name)
+    // Priorytety: Admin > Manager > User > pozostałe role
+    if (user.roles.some(role => role.name === 'Admin' || role.name === 'Administrator')) {
+      return 'Administrator';
+    }
+    
+    if (user.roles.some(role => role.name === 'Manager')) {
+      return 'Manager';
+    }
+    
+    if (user.roles.some(role => role.name === 'User')) {
+      return 'Użytkownik';
+    }
+    
+    // Jeśli nie ma żadnej z powyższych ról, zwróć pierwszą z listy
+    return user.roles[0].name;
+  };
+
   // Check if auth is ready before rendering the main layout
   if (!isReady) {
     return (
@@ -191,36 +240,83 @@ const MainLayout = ({ children }) => {
         <header className="bg-white shadow-sm z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
-              <div className="flex">
-                <div className="flex-shrink-0 flex items-center">
-                  {/* You can add a small logo here */}
+              <div className="flex items-center">
+                {/* Zegar i data */}
+                <div className="flex items-center text-gray-700 mr-6">
+                  <Clock className="w-5 h-5 text-indigo-600 mr-2" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold">{formatTime(currentTime)}</span>
+                    <span className="text-xs text-gray-500">{formatDate(currentTime)}</span>
+                  </div>
                 </div>
+                
+                {/* Tutaj można dodać inne elementy po lewej stronie */}
               </div>
               
-              {/* User menu */}
-              <div className="flex items-center">
-                {/* Message icon added here */}
-                <div className="mr-4">
-                  <Link to="/messages">
-                    <MessageCircle className="w-6 h-6 text-gray-700 hover:text-indigo-600 transition" />
-                  </Link>
+              {/* User menu i ikony po prawej */}
+              <div className="flex items-center space-x-5">
+                {/* Barcode Generator */}
+                <div className="rounded-full p-2 hover:bg-indigo-50 transition-colors" title="Generator kodów">
+                  <BarcodeWidget />
                 </div>
-                {/* NotificationBadge */}
-                <div className="mr-4">
+                
+                {/* Chat icon - dymek wiadomości */}
+                <Link 
+                  to="/messages" 
+                  className="rounded-full p-2 hover:bg-indigo-50 transition-colors"
+                  title="Wiadomości"
+                >
+                  <MessageCircle className="w-5 h-5 text-indigo-600" />
+                </Link>
+                
+                {/* Notifications - dzwonek */}
+                <div className="rounded-full p-2 hover:bg-indigo-50 transition-colors" title="Powiadomienia">
                   <NotificationBadge />
                 </div>
-                <div className="ml-3 relative">
-                  <div className="flex items-center">
-                    <span className="mr-3 text-sm font-medium text-gray-700">
-                      {user?.firstName} {user?.lastName}
-                    </span>
-                    <button
-                      onClick={handleLogout}
-                      className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    >
-                      Logout
-                    </button>
-                  </div>
+                
+                {/* Divider */}
+                <div className="h-8 border-r border-gray-300"></div>
+                
+                {/* User profile dropdown */}
+                <div className="relative">
+                  <button 
+                    className="flex items-center text-gray-700 hover:text-indigo-600 focus:outline-none transition-colors"
+                    onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  >
+                    <div className="bg-indigo-100 w-8 h-8 rounded-full flex items-center justify-center mr-2">
+                      <span className="text-indigo-700 text-sm font-medium">
+                        {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium">{user?.firstName} {user?.lastName}</span>
+                      <span className="text-xs text-gray-500">{getUserRoleName()}</span>
+                    </div>
+                    <ChevronDown className="ml-2 w-4 h-4" />
+                  </button>
+                  
+                  {userMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-20 border border-gray-200">
+                      <Link 
+                        to="/profile" 
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <User className="mr-2 h-4 w-4" />
+                        Mój profil
+                      </Link>
+                      <button
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Wyloguj
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

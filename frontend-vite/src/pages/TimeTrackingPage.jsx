@@ -1,6 +1,5 @@
 // frontend/src/pages/TimeTrackingPage.js
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -16,7 +15,7 @@ const TimeTrackingPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Time Tracking</h1>
+        <h1 className="text-2xl font-bold">Śledzenie czasu pracy</h1>
         
         <div className="flex gap-2">
           {hasPermission('leave', 'create') && (
@@ -28,7 +27,7 @@ const TimeTrackingPage = () => {
               to="/time-tracking/reports"
               className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
             >
-              View Reports
+              Pokaż raporty
             </Link>
           )}
           
@@ -37,29 +36,29 @@ const TimeTrackingPage = () => {
               to="/time-tracking/settings"
               className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
             >
-              Settings
+              Ustawienia
             </Link>
           )}
         </div>
       </div>
       
-      {/* Time Tracker Component */}
+      {/* Komponent śledzenia czasu */}
       <div className="mb-8">
         <TimeTracker />
       </div>
       
-      {/* Monthly Calendar */}
+      {/* Miesięczny kalendarz */}
       <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Monthly Overview</h2>
+        <h2 className="text-xl font-semibold mb-4">Przegląd miesięczny</h2>
         <MonthlyCalendar 
           selectedMonth={selectedMonth}
           onMonthChange={setSelectedMonth}
         />
       </div>
       
-      {/* Recent Work Sessions */}
+      {/* Ostatnie sesje pracy */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">Recent Work Sessions</h2>
+        <h2 className="text-xl font-semibold mb-4">Ostatnie sesje pracy</h2>
         <WorkSessionsList />
       </div>
     </div>

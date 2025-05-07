@@ -11,8 +11,28 @@ const leaveApi = {
 
   requestLeave: (leaveData) => api.post(`${BASE_URL}/request`, leaveData),
   updateLeaveRequest: (id, leaveData) => api.put(`${BASE_URL}/request/${id}`, leaveData),
-  approveLeave: (id, notes) => api.post(`${BASE_URL}/request/${id}/approve`, { notes }),
-  rejectLeave: (id, notes) => api.post(`${BASE_URL}/request/${id}/reject`, { notes }),
+  approveLeave: async (id, notes) => {
+    try {
+      console.log(`Approving leave request: ${id}, notes: ${notes || 'none'}`);
+      const response = await api.post(`${BASE_URL}/request/${id}/approve`, { notes });
+      console.log('Approval response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error approving leave request:', error);
+      throw error;
+    }
+  },
+  rejectLeave: async (id, notes) => {
+    try {
+      console.log(`Rejecting leave request: ${id}, notes: ${notes || 'none'}`);
+      const response = await api.post(`${BASE_URL}/request/${id}/reject`, { notes });
+      console.log('Rejection response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error rejecting leave request:', error);
+      throw error;
+    }
+  },
   deleteLeaveRequest: (id) => api.delete(`${BASE_URL}/request/${id}`),
 
   getUserLeaves: (page = 1, limit = 10, filters = {}) => {

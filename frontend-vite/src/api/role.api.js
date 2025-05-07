@@ -16,7 +16,8 @@ const roleApi = {
   create: (roleData) => api.post(BASE_URL, roleData),
   update: (id, roleData) => api.put(`${BASE_URL}/${id}`, roleData),
   delete: (id) => api.delete(`${BASE_URL}/${id}`),
-  getAllPermissions: () => api.get(`${BASE_URL}/permissions`)
+  getAllPermissions: (forceRefresh = false) => api.get(`${BASE_URL}/permissions${forceRefresh ? '?refresh=true' : ''}`),
+  refreshPermissionsCache: () => api.post(`${BASE_URL}/permissions/refresh`)
 };
 
 export default roleApi;

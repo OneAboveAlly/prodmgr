@@ -311,6 +311,8 @@ const approveRejectLeave = async (req, res) => {
     const { id } = req.params;
     const { status, notes } = req.body;
     
+    console.log(`Attempting to ${status} leave request with ID: ${id}, notes: ${notes || 'none'}`);
+    
     if (status !== 'approved' && status !== 'rejected') {
       return res.status(400).json({ message: 'Status must be either "approved" or "rejected"' });
     }
@@ -333,6 +335,8 @@ const approveRejectLeave = async (req, res) => {
       return res.status(404).json({ message: 'Leave request not found' });
     }
     
+    console.log(`Found leave request: ${JSON.stringify(leave, null, 2)}`);
+    
     // Check if user has permission to approve/reject
     if (req.user.permissions['leave.approve'] < 1) {
       return res.status(403).json({ message: 'You do not have permission to approve or reject leave requests' });
@@ -348,25 +352,36 @@ const approveRejectLeave = async (req, res) => {
       }
     });
     
-    // Add notification for the leave request owner
-    const content = `📝 Twój wniosek urlopowy został ${status === 'approved' ? 'zatwierdzony ✅' : 'odrzucony ❌'}`;
-    const link = '/leave';
-    const notification = await prisma.notification.create({
-      data: {
-        userId: leave.userId,
-        content,
-        link,
-        type: 'SYSTEM'
+    console.log(`Leave request updated successfully: ${JSON.stringify(updatedLeave, null, 2)}`);
+    
+    // Try to send notification, but continue even if it fails
+    try {
+      // Add notification for the leave request owner
+      const content = `📝 Twój wniosek urlopowy został ${status === 'approved' ? 'zatwierdzony ✅' : 'odrzucony ❌'}`;
+      const link = '/leave';
+      const notification = await prisma.notification.create({
+        data: {
+          userId: leave.userId,
+          content,
+          link,
+          type: 'SYSTEM',
+          createdById: req.user.id
+        }
+      });
+      
+      // Wyślij pełny obiekt powiadomienia do konkretnego użytkownika tylko jeśli socket.io jest dostępne
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${leave.userId}`)
+          .emit(`notification:${leave.userId}`, notification);
       }
-    });
+    } catch (notificationError) {
+      // Log the notification error but continue with the approval process
+      console.error('Error sending notification:', notificationError);
+      // We don't return here, just log the error and continue
+    }
     
-    // Wyślij pełny obiekt powiadomienia do konkretnego użytkownika
-    req.app.get('io')
-      .to(`user:${leave.userId}`)
-      .emit(`notification:${leave.userId}`, notification);
-    
-    
-    
+    // Log the audit entry
     await logAudit({
       userId: req.user.id,
       action: 'update',
@@ -387,7 +402,22 @@ const approveRejectLeave = async (req, res) => {
     });
   } catch (error) {
     console.error(`Error ${req.body.status === 'approved' ? 'approving' : 'rejecting'} leave request:`, error);
-    res.status(500).json({ message: `Error ${req.body.status === 'approved' ? 'approving' : 'rejecting'} leave request` });
+    
+    // Provide more detailed error information
+    let errorMessage = `Error ${req.body.status === 'approved' ? 'approving' : 'rejecting'} leave request`;
+    
+    if (error.code) {
+      errorMessage += ` - Code: ${error.code}`;
+    }
+    
+    if (error.meta) {
+      errorMessage += ` - Details: ${JSON.stringify(error.meta)}`;
+    }
+    
+    res.status(500).json({ 
+      message: errorMessage,
+      error: process.env.NODE_ENV !== 'production' ? error.toString() : undefined
+    });
   }
 };
 
@@ -447,6 +477,8 @@ const getUserLeaves = async (req, res) => {
     const { status, from, to } = req.query;
     const userId = req.params.userId || req.user.id;
     
+    console.log(`Fetching leave requests for user ${userId} with status: ${status || 'all'}`);
+    
     // Check permission if trying to access another user's leaves
     if (userId !== req.user.id && req.user.permissions['leave.viewAll'] < 1) {
       return res.status(403).json({ message: 'Access forbidden - insufficient permissions' });
@@ -457,6 +489,7 @@ const getUserLeaves = async (req, res) => {
     // Apply status filter
     if (status && ['pending', 'approved', 'rejected'].includes(status)) {
       where.status = status;
+      console.log(`Applying status filter: ${status}`);
     }
     
     // Apply date filters
@@ -528,7 +561,11 @@ const getPendingLeaves = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     
+    console.log(`Fetching pending leave requests, page: ${page}, limit: ${limit}`);
+    
     const where = { status: 'pending' };
+    
+    console.log(`Using where condition: ${JSON.stringify(where)}`);
     
     const [leaves, total] = await Promise.all([
       prisma.leave.findMany({
@@ -551,6 +588,12 @@ const getPendingLeaves = async (req, res) => {
       }),
       prisma.leave.count({ where })
     ]);
+    
+    console.log(`Found ${leaves.length} pending leave requests out of ${total} total`);
+    
+    if (leaves.length > 0) {
+      console.log(`First pending leave: ${JSON.stringify(leaves[0], null, 2)}`);
+    }
     
     res.json({
       leaves,

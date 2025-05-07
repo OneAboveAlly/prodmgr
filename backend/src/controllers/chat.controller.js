@@ -227,3 +227,27 @@ exports.sendMessageWithAttachment = async (req, res) => {
     });
   }
 };
+
+exports.markAsRead = async (req, res) => {
+  const userId = req.user.id;
+  const senderId = req.params.userId;
+
+  try {
+    // Oznacz wszystkie nieprzeczytane wiadomości od tego użytkownika jako przeczytane
+    await prisma.message.updateMany({
+      where: {
+        senderId: senderId,
+        receiverId: userId,
+        isRead: false
+      },
+      data: {
+        isRead: true
+      }
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    res.status(500).json({ message: 'Failed to mark messages as read' });
+  }
+};

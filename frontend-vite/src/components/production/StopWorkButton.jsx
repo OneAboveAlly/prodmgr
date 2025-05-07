@@ -14,7 +14,7 @@ const StopWorkButton = ({ step }) => {
     mutationFn: ({ stepId, notes, completeStep }) => 
       productionApi.endWorkOnStep(stepId, { notes, completeStep }),
     onSuccess: () => {
-      toast.success('Work completed successfully!');
+      toast.success('Praca zakończona pomyślnie!');
       queryClient.invalidateQueries(['guide']);
       queryClient.invalidateQueries(['step', step.id]);
       queryClient.invalidateQueries(['stepWorkEntries', step.id]);
@@ -23,7 +23,7 @@ const StopWorkButton = ({ step }) => {
       setCompleteStep(false);
     },
     onError: (error) => {
-      toast.error(`Error completing work: ${error.message}`);
+      toast.error(`Błąd zakończenia pracy: ${error.message}`);
     }
   });
 
@@ -47,11 +47,11 @@ const StopWorkButton = ({ step }) => {
   if (showConfirm) {
     return (
       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <h4 className="font-medium mb-2">Complete Work</h4>
+        <h4 className="font-medium mb-2">Zakończ pracę</h4>
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Notes (optional)
+              Notatki (opcjonalnie)
             </label>
             <textarea
               id="notes"
@@ -59,7 +59,7 @@ const StopWorkButton = ({ step }) => {
               onChange={(e) => setNotes(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
               rows="2"
-              placeholder="Describe what was completed..."
+              placeholder="Opisz co zostało wykonane..."
             ></textarea>
           </div>
           <div className="mb-3">
@@ -70,7 +70,7 @@ const StopWorkButton = ({ step }) => {
                 onChange={(e) => setCompleteStep(e.target.checked)}
                 className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
               />
-              <span className="ml-2 text-sm text-gray-700">Mark step as completed</span>
+              <span className="ml-2 text-sm text-gray-700">Oznacz krok jako ukończony</span>
             </label>
           </div>
           <div className="flex justify-end space-x-2">
@@ -79,14 +79,14 @@ const StopWorkButton = ({ step }) => {
               onClick={() => setShowConfirm(false)}
               className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800"
             >
-              Cancel
+              Anuluj
             </button>
             <button
               type="submit"
               disabled={stopWorkMutation.isLoading}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white"
             >
-              {stopWorkMutation.isLoading ? 'Saving...' : 'Complete Work'}
+              {stopWorkMutation.isLoading ? 'Zapisywanie...' : 'Zakończ pracę'}
             </button>
           </div>
         </form>
@@ -115,10 +115,16 @@ const StopWorkButton = ({ step }) => {
           strokeLinecap="round" 
           strokeLinejoin="round" 
           strokeWidth={2} 
-          d="M5 13l4 4L19 7" 
+          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+        <path 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+          strokeWidth={2} 
+          d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
         />
       </svg>
-      Complete Work
+      Zakończ pracę
     </button>
   );
 };

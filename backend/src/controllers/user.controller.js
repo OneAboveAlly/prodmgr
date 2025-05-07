@@ -408,10 +408,245 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// Get current user profile
+const getMyProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        login: true,
+        email: true,
+        phoneNumber: true,
+        birthDate: true,
+        isActive: true,
+        lastLogin: true,
+        lastActivity: true,
+        createdAt: true,
+        updatedAt: true,
+        userRoles: {
+          include: {
+            role: {
+              select: {
+                id: true,
+                name: true,
+                level: true
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    const formattedUser = {
+      ...user,
+      roles: user.userRoles.map(ur => ({
+        id: ur.role.id,
+        name: ur.role.name,
+        level: ur.role.level
+      })),
+      userRoles: undefined
+    };
+    
+    res.json(formattedUser);
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    res.status(500).json({ message: 'Error retrieving user profile' });
+  }
+};
+
+// Update current user profile
+const updateMyProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { firstName, lastName, email, phoneNumber } = req.body;
+    
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
+    if (!existingUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // If email is changed, check if it's already used
+    if (email && email !== existingUser.email) {
+      const emailExists = await prisma.user.findFirst({
+        where: {
+          email,
+          id: { not: userId }
+        }
+      });
+      
+      if (emailExists) {
+        return res.status(400).json({ message: 'Email address is already in use' });
+      }
+    }
+    
+    // Update user data
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        firstName,
+        lastName,
+        email,
+        phoneNumber
+      }
+    });
+    
+    // Log the profile update
+    await logAudit({
+      userId,
+      action: 'update',
+      module: 'profile',
+      targetId: userId,
+      meta: { 
+        updatedFields: { firstName, lastName, email, phoneNumber }
+      }
+    });
+    
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser.id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email,
+        phoneNumber: updatedUser.phoneNumber
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    res.status(500).json({ message: 'Error updating profile' });
+  }
+};
+
+// Change current user password
+const changePassword = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters long' });
+    }
+    
+    // Get current user with password hash
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true
+      }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Check if current password is correct
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    }
+    
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    
+    // Update password
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: newPasswordHash
+      }
+    });
+    
+    // Log password change
+    await logAudit({
+      userId,
+      action: 'update',
+      module: 'security',
+      targetId: userId,
+      meta: { action: 'password_change' }
+    });
+    
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ message: 'Error changing password' });
+  }
+};
+
+// Get users with today's birthdays
+const getTodayBirthdays = async (req, res) => {
+  try {
+    const today = new Date();
+    const month = today.getMonth() + 1; // JavaScript months are 0-indexed
+    const day = today.getDate();
+    
+    // Find users whose birth date matches today's month and day
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        birthDate: { not: null }
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true
+      }
+    });
+    
+    // Filter users with birthdays today
+    const birthdayUsers = users.filter(user => {
+      if (!user.birthDate) return false;
+      const birthDate = new Date(user.birthDate);
+      return birthDate.getMonth() + 1 === month && birthDate.getDate() === day;
+    });
+    
+    // Calculate age for each user
+    const usersWithAge = birthdayUsers.map(user => {
+      const birthDate = new Date(user.birthDate);
+      const age = today.getFullYear() - birthDate.getFullYear();
+      
+      return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        age: age
+      };
+    });
+    
+    res.json({ users: usersWithAge });
+  } catch (error) {
+    console.error('Error getting users with today birthdays:', error);
+    res.status(500).json({ message: 'Error retrieving birthday information' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  getMyProfile,
+  updateMyProfile,
+  changePassword,
+  getTodayBirthdays
 };

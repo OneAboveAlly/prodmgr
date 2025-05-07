@@ -18,53 +18,53 @@ const LeaveTypesPage = () => {
     color: '#4F46E5'
   });
 
-  // Fetch leave types
+  // Pobieranie typów urlopów
   const { data: leaveTypes, isLoading } = useQuery({
     queryKey: ['leaveTypes'],
     queryFn: () => leaveApi.getLeaveTypes().then(res => res.data)
   });
 
-  // Create leave type mutation
+  // Mutacja tworzenia typu urlopu
   const createLeaveTypeMutation = useMutation({
     mutationFn: (data) => leaveApi.createLeaveType(data),
     onSuccess: () => {
-      toast.success('Leave type created successfully');
+      toast.success('Typ urlopu utworzony pomyślnie');
       queryClient.invalidateQueries({ queryKey: ['leaveTypes'] });
       setIsModalOpen(false);
       resetForm();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to create leave type');
+      toast.error(error.response?.data?.message || 'Nie udało się utworzyć typu urlopu');
     }
   });
 
-  // Update leave type mutation
+  // Mutacja aktualizacji typu urlopu
   const updateLeaveTypeMutation = useMutation({
     mutationFn: (data) => leaveApi.updateLeaveType(data.id, data),
     onSuccess: () => {
-      toast.success('Leave type updated successfully');
+      toast.success('Typ urlopu zaktualizowany pomyślnie');
       queryClient.invalidateQueries({ queryKey: ['leaveTypes'] });
       setIsModalOpen(false);
       resetForm();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update leave type');
+      toast.error(error.response?.data?.message || 'Nie udało się zaktualizować typu urlopu');
     }
   });
 
-  // Delete leave type mutation
+  // Mutacja usunięcia typu urlopu
   const deleteLeaveTypeMutation = useMutation({
     mutationFn: (id) => leaveApi.deleteLeaveType(id),
     onSuccess: () => {
-      toast.success('Leave type deleted successfully');
+      toast.success('Typ urlopu usunięty pomyślnie');
       queryClient.invalidateQueries({ queryKey: ['leaveTypes'] });
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to delete leave type');
+      toast.error(error.response?.data?.message || 'Nie udało się usunąć typu urlopu');
     }
   });
 
-  // Reset form to initial state
+  // Resetowanie formularza do stanu początkowego
   const resetForm = () => {
     setFormData({
       name: '',
@@ -75,13 +75,13 @@ const LeaveTypesPage = () => {
     setEditingLeaveType(null);
   };
 
-  // Open modal for creating a new leave type
+  // Otwieranie modalu do utworzenia nowego typu urlopu
   const openCreateModal = () => {
     resetForm();
     setIsModalOpen(true);
   };
 
-  // Open modal for editing an existing leave type
+  // Otwieranie modalu do edycji istniejącego typu urlopu
   const openEditModal = (leaveType) => {
     setFormData({
       name: leaveType.name,
@@ -93,13 +93,13 @@ const LeaveTypesPage = () => {
     setIsModalOpen(true);
   };
 
-  // Close modal
+  // Zamykanie modalu
   const closeModal = () => {
     setIsModalOpen(false);
     resetForm();
   };
 
-  // Handle form input changes
+  // Obsługa zmian w formularzu
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -108,7 +108,7 @@ const LeaveTypesPage = () => {
     }));
   };
 
-  // Handle form submission
+  // Obsługa przesyłania formularza
   const handleSubmit = (e) => {
     e.preventDefault();
     
@@ -122,20 +122,20 @@ const LeaveTypesPage = () => {
     }
   };
 
-  // Handle leave type deletion with confirmation
+  // Obsługa usuwania typu urlopu z potwierdzeniem
   const handleDeleteLeaveType = (id, name) => {
-    if (window.confirm(`Are you sure you want to delete the leave type "${name}"? This action cannot be undone.`)) {
+    if (window.confirm(`Czy na pewno chcesz usunąć typ urlopu "${name}"? Tej operacji nie można cofnąć.`)) {
       deleteLeaveTypeMutation.mutate(id);
     }
   };
 
-  // If user doesn't have the required permission, don't render the page
+  // Jeśli użytkownik nie ma wymaganych uprawnień, nie renderuj strony
   if (!hasPermission('leave', 'manageTypes')) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <strong className="font-bold">Access Denied:</strong>
-          <span className="block"> You do not have permission to manage leave types.</span>
+          <strong className="font-bold">Odmowa dostępu:</strong>
+          <span className="block"> Nie masz uprawnień do zarządzania typami urlopów.</span>
         </div>
       </div>
     );
@@ -144,29 +144,29 @@ const LeaveTypesPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Leave Types</h1>
+        <h1 className="text-2xl font-bold">Typy urlopów</h1>
         <div className="flex gap-2">
           <button 
             onClick={openCreateModal}
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
           >
-            Add Leave Type
+            Dodaj typ urlopu
           </button>
           <Link 
             to="/leave" 
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
           >
-            Back to Leave
+            Powrót do urlopów
           </Link>
         </div>
       </div>
 
-      {/* Leave Types Table */}
+      {/* Tabela typów urlopów */}
       {isLoading ? (
-        <div className="text-center py-8">Loading leave types...</div>
+        <div className="text-center py-8">Ładowanie typów urlopów...</div>
       ) : leaveTypes?.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-6 text-center">
-          <p className="text-gray-500">No leave types found. Click "Add Leave Type" to create one.</p>
+          <p className="text-gray-500">Nie znaleziono typów urlopów. Kliknij "Dodaj typ urlopu", aby utworzyć nowy.</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -174,16 +174,16 @@ const LeaveTypesPage = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
+                  Typ
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Description
+                  Opis
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Paid
+                  Płatny
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  Akcje
                 </th>
               </tr>
             </thead>
@@ -206,7 +206,7 @@ const LeaveTypesPage = () => {
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       leaveType.paid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {leaveType.paid ? 'Paid' : 'Unpaid'}
+                      {leaveType.paid ? 'Płatny' : 'Bezpłatny'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -214,13 +214,13 @@ const LeaveTypesPage = () => {
                       onClick={() => openEditModal(leaveType)}
                       className="text-indigo-600 hover:text-indigo-900 mr-4"
                     >
-                      Edit
+                      Edytuj
                     </button>
                     <button
                       onClick={() => handleDeleteLeaveType(leaveType.id, leaveType.name)}
                       className="text-red-600 hover:text-red-900"
                     >
-                      Delete
+                      Usuń
                     </button>
                   </td>
                 </tr>
@@ -230,75 +230,58 @@ const LeaveTypesPage = () => {
         </div>
       )}
 
-      {/* Leave Type Modal */}
+      {/* Modal typu urlopu */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
-            {/* Modal backdrop */}
+            {/* Tło modalu */}
             <div 
               className="fixed inset-0 bg-black opacity-50"
               onClick={closeModal}
             ></div>
             
-            {/* Modal content */}
+            {/* Zawartość modalu */}
             <div className="bg-white rounded-lg shadow-xl z-10 w-full max-w-md">
               <div className="p-5 border-b border-gray-200">
                 <h3 className="text-lg font-medium text-gray-900">
-                  {editingLeaveType ? 'Edit Leave Type' : 'Add Leave Type'}
+                  {editingLeaveType ? 'Edytuj typ urlopu' : 'Dodaj typ urlopu'}
                 </h3>
               </div>
               
               <form onSubmit={handleSubmit} className="p-5">
-                {/* Name */}
+                {/* Nazwa */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                    Nazwa <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
+                    id="name"
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
                     required
                     className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="e.g., Vacation, Sick Leave, etc."
                   />
                 </div>
                 
-                {/* Description */}
+                {/* Opis */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description (optional)
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                    Opis
                   </label>
                   <textarea
+                    id="description"
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
-                    rows="2"
+                    rows="3"
                     className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="Brief description of this leave type"
                   ></textarea>
                 </div>
                 
-                {/* Color */}
+                {/* Płatny */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Color
-                  </label>
-                  <div className="flex items-center">
-                    <input
-                      type="color"
-                      name="color"
-                      value={formData.color}
-                      onChange={handleChange}
-                      className="h-8 w-8 border border-gray-300 rounded-md cursor-pointer"
-                    />
-                    <span className="ml-2 text-sm text-gray-500">Pick a color for this leave type</span>
-                  </div>
-                </div>
-                
-                {/* Paid/Unpaid */}
-                <div className="mb-6">
                   <div className="flex items-center">
                     <input
                       type="checkbox"
@@ -309,25 +292,42 @@ const LeaveTypesPage = () => {
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                     />
                     <label htmlFor="paid" className="ml-2 block text-sm font-medium text-gray-700">
-                      Paid Leave
+                      Płatny urlop
                     </label>
                   </div>
-                  <p className="mt-1 text-sm text-gray-500 ml-6">
-                    {formData.paid 
-                      ? 'Employee will be paid during this leave'
-                      : 'Employee will not be paid during this leave'
-                    }
-                  </p>
                 </div>
                 
-                {/* Action Buttons */}
+                {/* Kolor */}
+                <div className="mb-4">
+                  <label htmlFor="color" className="block text-sm font-medium text-gray-700 mb-1">
+                    Kolor
+                  </label>
+                  <div className="flex items-center">
+                    <input
+                      type="color"
+                      id="color"
+                      name="color"
+                      value={formData.color}
+                      onChange={handleChange}
+                      className="h-8 w-8 border-0 p-0 mr-2"
+                    />
+                    <input
+                      type="text"
+                      value={formData.color}
+                      onChange={handleChange}
+                      name="color"
+                      className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+                
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
                     onClick={closeModal}
                     className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
-                    Cancel
+                    Anuluj
                   </button>
                   
                   <button
@@ -336,8 +336,8 @@ const LeaveTypesPage = () => {
                     className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
                   >
                     {createLeaveTypeMutation.isPending || updateLeaveTypeMutation.isPending 
-                      ? 'Saving...' 
-                      : editingLeaveType ? 'Update' : 'Create'
+                      ? 'Zapisywanie...' 
+                      : editingLeaveType ? 'Aktualizuj' : 'Utwórz'
                     }
                   </button>
                 </div>

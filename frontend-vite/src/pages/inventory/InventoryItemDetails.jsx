@@ -63,7 +63,19 @@ export default function InventoryItemDetails() {
             onClick={() => navigate(-1)}
             className="text-sm text-blue-600"
           >⬅️ Powrót</button>
-          {hasPermission('inventory', 'update', 1) && (
+          
+          {/* Przycisk pobierania przedmiotu - dla użytkowników z uprawnieniami do pobierania przedmiotów */}
+          {hasPermission('inventory', 'issue') && (
+            <button
+              onClick={() => navigate(`/inventory/items/withdraw/${item.id}`)}
+              className="text-sm bg-red-500 text-white px-3 py-1 rounded"
+            >
+              ↩️ Pobierz przedmiot
+            </button>
+          )}
+          
+          {/* Przycisk edycji - tylko dla użytkowników z uprawnieniami update */}
+          {hasPermission('inventory', 'update') && (
             <Link
             to={`/inventory/items/edit/${item.id}`}
             className="text-sm bg-yellow-500 text-white px-3 py-1 rounded"
@@ -131,37 +143,40 @@ export default function InventoryItemDetails() {
 
       <hr className="my-6" />
 
-      <div>
-        <h2 className="text-xl font-semibold mb-2">📜 Historia transakcji</h2>
-        {item.transactions?.length === 0 ? (
-          <p className="text-sm text-gray-500">Brak transakcji.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm border">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-2 text-left">Data</th>
-                  <th className="p-2 text-left">Typ</th>
-                  <th className="p-2 text-left">Ilość</th>
-                  <th className="p-2 text-left">Użytkownik</th>
-                  <th className="p-2 text-left">Powód</th>
-                </tr>
-              </thead>
-              <tbody>
-                {item.transactions?.map(tx => (
-                  <tr key={tx.id} className="border-t">
-                    <td className="p-2">{new Date(tx.createdAt).toLocaleString()}</td>
-                    <td className="p-2">{tx.type}</td>
-                    <td className="p-2">{tx.quantity}</td>
-                    <td className="p-2">{tx.user.firstName} {tx.user.lastName}</td>
-                    <td className="p-2">{tx.reason || '-'}</td>
+      {/* Sekcja historii transakcji - widoczna tylko dla użytkowników z uprawnieniami do zarządzania */}
+      {hasPermission('inventory', 'manage', 1) ? (
+        <div>
+          <h2 className="text-xl font-semibold mb-2">📜 Historia transakcji</h2>
+          {item.transactions?.length === 0 ? (
+            <p className="text-sm text-gray-500">Brak transakcji.</p>
+          ) : (
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm border">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="p-2 text-left">Data</th>
+                    <th className="p-2 text-left">Typ</th>
+                    <th className="p-2 text-left">Ilość</th>
+                    <th className="p-2 text-left">Użytkownik</th>
+                    <th className="p-2 text-left">Powód</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {item.transactions?.map(tx => (
+                    <tr key={tx.id} className="border-t">
+                      <td className="p-2">{new Date(tx.createdAt).toLocaleString()}</td>
+                      <td className="p-2">{tx.type}</td>
+                      <td className="p-2">{tx.quantity}</td>
+                      <td className="p-2">{tx.user.firstName} {tx.user.lastName}</td>
+                      <td className="p-2">{tx.reason || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

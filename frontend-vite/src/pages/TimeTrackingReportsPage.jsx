@@ -4,7 +4,6 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 import timeTrackingApi from '../api/timeTracking.api';
 import userApi from '../api/user.api';
 import { useAuth } from '../contexts/AuthContext';
@@ -56,10 +55,10 @@ const TimeTrackingReportsPage = () => {
     onSuccess: (data) => {
         console.log("REPORT DATA:", data);
       setReportData(data);
-      toast.success('Report generated successfully');
+      toast.success('Raport wygenerowany pomyślnie');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to generate report');
+      toast.error(error.response?.data?.message || 'Nie udało się wygenerować raportu');
     }
   });
   
@@ -95,7 +94,7 @@ const TimeTrackingReportsPage = () => {
   // Generate the report
   const handleGenerateReport = () => {
     if (selectedUserIds.length === 0) {
-      toast.error('Please select at least one user');
+      toast.error('Wybierz co najmniej jednego pracownika');
       return;
     }
     
@@ -109,82 +108,82 @@ const TimeTrackingReportsPage = () => {
   // Export report to Excel
   const exportToExcel = () => {
     if (!reportData || reportData.length === 0) {
-      toast.error('No report data to export');
+      toast.error('Brak danych raportu do eksportu');
       return;
     }
     
     try {
-      // Create worksheet with user summary
-      const summaryWs = XLSX.utils.json_to_sheet(
-        reportData.map(user => ({
-          'User': user.name,
-          'Total Work Hours': formatDuration(user.totalWorkDuration),
-          'Total Break Hours': formatDuration(user.totalBreakDuration),
-          'Work Days': Object.keys(user.dailyData).length
-        }))
-      );
-      
-      // Create detailed worksheet with daily data
+      // Spłaszczamy dane dla Excela
+      const summaryData = reportData.map(userData => ({
+        'Pracownik': userData.name,
+        'Liczba sesji': userData.sessionCount,
+        'Czas pracy (godz.)': Math.round((userData.totalWorkDuration / 3600) * 100) / 100,
+        'Czas przerw (godz.)': Math.round((userData.totalBreakDuration / 3600) * 100) / 100,
+        'Dni robocze': userData.dailyData.length,
+      }));
+
+      // Tworzymy szczegółowe dane dzienne
       const detailedData = [];
-      
-      // Flatten the data structure for Excel
-      reportData.forEach(user => {
-        user.dailyData.forEach(day => {
+      reportData.forEach(userData => {
+        userData.dailyData.forEach(day => {
           detailedData.push({
-            'User': user.name,
-            'Date': day.date,
-            'Work Hours': formatDuration(day.workDuration),
-            'Break Hours': formatDuration(day.breakDuration),
-            'Sessions': day.sessions.length
+            'Pracownik': userData.name,
+            'Data': day.date,
+            'Liczba sesji': day.sessions.length,
+            'Czas pracy (godz.)': Math.round((day.workDuration / 3600) * 100) / 100,
+            'Czas przerw (godz.)': Math.round((day.breakDuration / 3600) * 100) / 100,
           });
         });
       });
-      
-      const detailedWs = XLSX.utils.json_to_sheet(detailedData);
-      
-      // Create a new worksheet for session notes
+
+      // Tworzymy dane dla notatek sesji
       const notesData = [];
-      
-      // Add session notes to a separate sheet
-      reportData.forEach(user => {
-        user.dailyData.forEach(day => {
+      reportData.forEach(userData => {
+        userData.dailyData.forEach(day => {
           day.sessions.forEach(session => {
             if (session.notes) {
               notesData.push({
-                'User': user.name,
-                'Date': new Date(session.startTime).toLocaleDateString(),
-                'Start Time': new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                'End Time': session.endTime ? new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-                'Duration': formatDuration(session.duration),
-                'Notes': session.notes
+                'Pracownik': userData.name,
+                'Data': day.date,
+                'Rozpoczęcie': new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                'Zakończenie': session.endTime 
+                  ? new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : 'W trakcie',
+                'Typ': session.type === 'work' ? 'Praca' : 'Przerwa',
+                'Notatki': session.notes || ''
               });
             }
           });
         });
       });
-      
-      const notesWs = XLSX.utils.json_to_sheet(notesData);
-      
-      // Create a new workbook and append the worksheets
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
-      XLSX.utils.book_append_sheet(wb, detailedWs, 'Daily Details');
-      XLSX.utils.book_append_sheet(wb, notesWs, 'Session Notes');
-      
-      // Generate Excel file
-      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const fileData = new Blob([excelBuffer], { type: 'application/octet-stream' });
-      
-      // Define filename with current date
-      const fileName = `time_tracking_report_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      
-      // Save file
-      saveAs(fileData, fileName);
-      
-      toast.success('Report exported successfully');
+
+      // Tworzymy nowy skoroszyt
+      const workbook = XLSX.utils.book_new();
+
+      // Dodajemy arkusz podsumowania
+      const summaryWorksheet = XLSX.utils.json_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Podsumowanie');
+
+      // Dodajemy arkusz ze szczegółowymi danymi dziennymi
+      const detailedWorksheet = XLSX.utils.json_to_sheet(detailedData);
+      XLSX.utils.book_append_sheet(workbook, detailedWorksheet, 'Szczegóły dzienne');
+
+      // Dodajemy arkusz z notatkami sesji, jeśli są
+      if (notesData.length > 0) {
+        const notesWorksheet = XLSX.utils.json_to_sheet(notesData);
+        XLSX.utils.book_append_sheet(workbook, notesWorksheet, 'Notatki sesji');
+      }
+
+      // Generujemy nazwę pliku
+      const fileName = `raport_czasu_pracy_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+      // Zapisujemy plik i inicjujemy pobieranie
+      XLSX.writeFile(workbook, fileName);
+
+      toast.success('Raport wyeksportowany pomyślnie');
     } catch (error) {
-      console.error('Export error:', error);
-      toast.error('Failed to export report');
+      console.error('Błąd podczas eksportu do Excel:', error);
+      toast.error('Nie udało się wyeksportować raportu');
     }
   };
 
@@ -197,33 +196,33 @@ const TimeTrackingReportsPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Time Tracking Reports</h1>
+        <h1 className="text-2xl font-bold">Raporty czasu pracy</h1>
         <div className="flex space-x-2">
           <Link
             to="/time-tracking/users-activity"
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
-            Monitor Active Users
+            Monitoruj aktywnych pracowników
           </Link>
           <button
             onClick={() => navigate('/time-tracking')}
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
           >
-            Back to Time Tracking
+            Powrót do śledzenia czasu
           </button>
         </div>
       </div>
       
       {/* Report Controls */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Generate Report</h2>
+        <h2 className="text-lg font-semibold mb-4">Generuj raport</h2>
         
         {/* Date Range Selection */}
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Date Range</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-2">Zakres dat</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+              <label className="block text-sm text-gray-600 mb-1">Data początkowa</label>
               <input
                 type="date"
                 name="startDate"
@@ -233,7 +232,7 @@ const TimeTrackingReportsPage = () => {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">End Date</label>
+              <label className="block text-sm text-gray-600 mb-1">Data końcowa</label>
               <input
                 type="date"
                 name="endDate"
@@ -249,51 +248,44 @@ const TimeTrackingReportsPage = () => {
         {/* User Selection */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-gray-700">Select Users</h3>
+            <h3 className="text-sm font-medium text-gray-700">Wybierz pracowników</h3>
             <div className="space-x-2">
               <button
-                onClick={() => {
-                  selectAllUsers();
-                  console.log('Select All clicked, selectedUserIds:', usersData?.map(user => user.id));
-                }}
+                onClick={selectAllUsers}
                 className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
               >
-                Select All
+                Wybierz wszystkich
               </button>
               <button
                 onClick={deselectAllUsers}
                 className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
-                Deselect All
+                Odznacz wszystkich
               </button>
             </div>
           </div>
           
           {usersLoading ? (
-            <div className="text-center py-4">Loading users...</div>
+            <div className="text-center py-4">Ładowanie pracowników...</div>
           ) : (
             <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
-              {console.log('Rendering user list, count:', usersData?.length)}
-              {Array.isArray(usersData) && usersData.map(user => {
-                console.log('Rendering user:', user.id, user.firstName, user.lastName);
-                return (
-                  <div key={user.id} className="flex items-center p-2 hover:bg-gray-50">
-                    <input
-                      type="checkbox"
-                      id={`user-${user.id}`}
-                      checked={selectedUserIds.includes(user.id)}
-                      onChange={() => handleUserSelection(user.id)}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor={`user-${user.id}`} className="ml-2 text-sm text-gray-700 cursor-pointer">
-                      {user.firstName} {user.lastName}
-                    </label>
-                  </div>
-                );
-              })}
+              {Array.isArray(usersData) && usersData.map(user => (
+                <div key={user.id} className="flex items-center p-2 hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    id={`user-${user.id}`}
+                    checked={selectedUserIds.includes(user.id)}
+                    onChange={() => handleUserSelection(user.id)}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor={`user-${user.id}`} className="ml-2 text-sm text-gray-700 cursor-pointer">
+                    {user.firstName} {user.lastName}
+                  </label>
+                </div>
+              ))}
               
               {(!usersData || usersData.length === 0) && (
-                <div className="p-4 text-center text-gray-500">No users found</div>
+                <div className="p-4 text-center text-gray-500">Nie znaleziono pracowników</div>
               )}
             </div>
           )}
@@ -306,7 +298,7 @@ const TimeTrackingReportsPage = () => {
             disabled={generateReportMutation.isPending || selectedUserIds.length === 0}
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-indigo-300"
           >
-            {generateReportMutation.isPending ? 'Generating...' : 'Generate Report'}
+            {generateReportMutation.isPending ? 'Generowanie...' : 'Generuj raport'}
           </button>
         </div>
       </div>
@@ -315,13 +307,13 @@ const TimeTrackingReportsPage = () => {
       {reportData && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Report Results</h2>
+            <h2 className="text-lg font-semibold">Wyniki raportu</h2>
             {hasPermission('timeTracking', 'exportReports') && (
               <button
                 onClick={exportToExcel}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
               >
-                Export to Excel
+                Eksportuj do Excela
               </button>
             )}
           </div>
@@ -332,16 +324,16 @@ const TimeTrackingReportsPage = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
+                    Pracownik
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Work Time
+                    Całkowity czas pracy
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Break Time
+                    Całkowity czas przerw
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Work Days
+                    Dni robocze
                   </th>
                 </tr>
               </thead>
@@ -373,27 +365,27 @@ const TimeTrackingReportsPage = () => {
                 <summary className="flex justify-between items-center p-4 cursor-pointer hover:bg-gray-50">
                   <span className="font-medium">{user.name}</span>
                   <span className="text-sm text-gray-500">
-                    {user.dailyData.length} days, {formatDuration(user.totalWorkDuration)} worked
+                    {user.dailyData.length} dni, {formatDuration(user.totalWorkDuration)} przepracowane
                   </span>
                 </summary>
                 <div className="p-4 bg-gray-50">
                   {user.dailyData.length === 0 ? (
-                    <p className="text-center text-gray-500 py-2">No data for selected date range</p>
+                    <p className="text-center text-gray-500 py-2">Brak danych dla wybranego zakresu dat</p>
                   ) : (
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Date
+                            Data
                           </th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Work Time
+                            Czas pracy
                           </th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Break Time
+                            Czas przerw
                           </th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Sessions
+                            Sesje
                           </th>
                         </tr>
                       </thead>

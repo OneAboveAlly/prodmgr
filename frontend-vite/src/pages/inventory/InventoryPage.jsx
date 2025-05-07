@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import inventoryApi from '../../api/inventory.api';
 import CreateItemModal from '../../components/inventory/CreateItemModal';
 import UpdateQuantityModal from '../../components/inventory/UpdateQuantityModal';
+import AdjustQuantityModal from '../../components/inventory/AdjustQuantityModal';
+import InventoryTableView from '../../components/inventory/InventoryTableView';
 import { useAuth } from "../../contexts/AuthContext";
 
 
@@ -17,6 +19,8 @@ export default function InventoryPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalItem, setModalItem] = useState(null);
   const [modalMode, setModalMode] = useState('add');
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [adjustItem, setAdjustItem] = useState(null);
   const navigate = useNavigate();
 
   const { isReady, hasPermission } = useAuth();
@@ -44,6 +48,20 @@ export default function InventoryPage() {
     }
   };
 
+  const handleUpdateQuantity = (item, mode) => {
+    // Przekazujemy item i tryb do modalu bez sprawdzania uprawnień
+    // Uprawnienia są już sprawdzane w UpdateQuantityModal
+    setModalItem(item);
+    setModalMode(mode);
+    // NIE ustawiamy isModalOpen, bo to jest zarezerwowane dla CreateItemModal
+  };
+  
+  const handleAdjustQuantity = (item) => {
+    setAdjustItem(item);
+    setIsAdjustModalOpen(true);
+  };
+
+  // Kontrola dostępu - użytkownik musi mieć podstawowy dostęp do magazynu
   if (!isReady) return <div className="p-4">⏳ Sprawdzanie dostępu...</div>;
   if (!canView) return <div className="p-4 text-red-600">🚫 Brak uprawnień do przeglądu magazynu.</div>;
 
@@ -52,6 +70,7 @@ export default function InventoryPage() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">📦 Magazyn</h1>
         <div className="flex gap-2">
+          {/* Przycisk Raport - tylko dla użytkowników z wyższym poziomem uprawnień do odczytu */}
           {hasPermission('inventory', 'read', 2) && (
             <button
               onClick={() => navigate('/inventory/report')}
@@ -60,10 +79,22 @@ export default function InventoryPage() {
               📊 Raport
             </button>
           )}
-          {hasPermission('inventory', 'create', 1) && (
+          
+          {/* Przycisk Historia transakcji - tylko dla użytkowników zarządzających magazynem */}
+          {hasPermission('inventory', 'manage', 1) && (
+            <button
+              onClick={() => navigate('/inventory/transactions')}
+              className="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600"
+            >
+              🧾 Historia transakcji
+            </button>
+          )}
+          
+          {/* Przycisk Dodaj przedmiot - tylko dla użytkowników z uprawnieniami do tworzenia */}
+          {hasPermission('inventory', 'create') && (
             <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700"
+              className="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700"
             >
               ➕ Dodaj przedmiot
             </button>
@@ -106,60 +137,13 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div className="overflow-auto border rounded">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="text-left p-2">Nazwa</th>
-              <th className="text-left p-2">Kod</th>
-              <th className="text-left p-2">Ilość</th>
-              <th className="text-left p-2">Lokalizacja</th>
-              <th className="text-left p-2">Kategoria</th>
-              <th className="text-left p-2">Akcje</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(item => (
-              <tr key={item.id} className="border-t hover:bg-gray-50">
-                <td className="p-2 font-medium">{item.name}</td>
-                <td className="p-2 text-xs text-gray-500">{item.barcode}</td>
-                <td className="p-2">
-                <span className={
-  item.minQuantity != null && item.quantity <= item.minQuantity
-    ? item.quantity === 0
-      ? "text-red-600 font-semibold"
-      : "text-yellow-600 font-semibold"
-    : "text-green-600 font-semibold"
-}>
-  {item.quantity} {item.unit}
-</span>
-</td>
-                <td className="p-2">{item.location || '-'}</td>
-                <td className="p-2">{item.category || '-'}</td>
-                <td className="p-2 flex gap-1">
-                  <button
-                    onClick={() => navigate(`/inventory/items/${item.id}`)}
-                    className="text-sm px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                  >📄</button>
-                  <button
-                    onClick={() => {
-                      setModalItem(item);
-                      setModalMode('add');
-                    }}
-                    className="text-sm px-2 py-1 bg-green-200 rounded hover:bg-green-300"
-                  >➕</button>
-                  <button
-                    onClick={() => {
-                      setModalItem(item);
-                      setModalMode('remove');
-                    }}
-                    className="text-sm px-2 py-1 bg-red-200 rounded hover:bg-red-300"
-                  >➖</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="border rounded">
+        <InventoryTableView 
+          items={items} 
+          onUpdateQuantity={handleUpdateQuantity}
+          onAdjustQuantity={handleAdjustQuantity}
+          showActions={true}
+        />
       </div>
 
       <div className="flex items-center gap-2 mt-4">
@@ -185,11 +169,28 @@ export default function InventoryPage() {
         />
       )}
 
-      {modalItem && (
+      {modalItem && modalMode === 'add' && (
         <UpdateQuantityModal
           item={modalItem}
-          mode={modalMode}
+          mode="add"
           onClose={() => setModalItem(null)}
+          onUpdated={fetchItems}
+        />
+      )}
+      
+      {modalItem && modalMode === 'remove' && (
+        <UpdateQuantityModal
+          item={modalItem}
+          mode="remove"
+          onClose={() => setModalItem(null)}
+          onUpdated={fetchItems}
+        />
+      )}
+
+      {isAdjustModalOpen && (
+        <AdjustQuantityModal
+          item={adjustItem}
+          onClose={() => setIsAdjustModalOpen(false)}
           onUpdated={fetchItems}
         />
       )}

@@ -52,6 +52,17 @@ model User {
 
   // New relation for archived guides
   archivedGuides ProductionGuide[] @relation("ArchivedGuides")
+
+  // Add these new relations
+  withdrawnItems  GuideInventory[] @relation("WithdrawnItems")
+  guideAccessLogs GuideAccessLog[] @relation("UserGuideAccessLogs")
+
+  // New relation for quality checks
+  qualityChecks QualityCheck[]
+
+  // New relation for production scheduling
+  productionSchedules ProductionSchedule[]
+  scheduleAssignments ScheduleAssignment[]
 }
 
 model Role {
@@ -288,9 +299,18 @@ model ProductionGuide {
   // New relation to track changes
   changeHistory GuideChangeHistory[]
 
+  // Add relation for GuideAccessLog
+  accessLogs GuideAccessLog[]
+
   // Powiązania
   steps     ProductionStep[]
   inventory GuideInventory[]
+
+  // New relation for quality checks
+  qualityChecks QualityCheck[]
+
+  // New relation for production scheduling
+  scheduleAssignments ScheduleAssignment[]
 
   // Indeksy
   @@index([barcode])
@@ -324,6 +344,12 @@ model ProductionStep {
 
   // OCR relation
   ocrResults OcrResult[]
+
+  // New relation for quality checks
+  qualityChecks QualityCheck[]
+
+  // New relation for production scheduling
+  scheduleAssignments ScheduleAssignment[]
 
   @@index([guideId])
   @@index([status])
@@ -385,8 +411,8 @@ model StepAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
 
-  step      ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  step ProductionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([stepId, userId])
   @@index([userId])
@@ -412,6 +438,10 @@ model Attachment {
   createdBy         User             @relation(fields: [createdById], references: [id])
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+
+  // New relation for quality checks
+  qualityCheckId String?
+  qualityCheck   QualityCheck? @relation("QualityCheckAttachments", fields: [qualityCheckId], references: [id], onDelete: SetNull)
 
   @@index([productionGuideId])
   @@index([productionStepId])
@@ -476,16 +506,22 @@ model GuideInventory {
   itemId    String
   item      InventoryItem   @relation(fields: [itemId], references: [id])
   quantity  Float // Ilość potrzebna do produkcji
-  stepId    String? // Opcjonalne powiązanie z konkretnym krokiem
+  stepId    String? // Opcjonalne powiązanie z konkretnym etapem
   reserved  Boolean         @default(true) // Czy przedmiot jest zarezerwowany
   createdAt DateTime        @default(now())
   updatedAt DateTime        @default(now())
+
+  // Add the missing relation field for User.withdrawnItems
+  withdrawnById String?
+  withdrawnBy   User?   @relation("WithdrawnItems", fields: [withdrawnById], references: [id])
+  withdrawnDate DateTime? // Data pobrania przedmiotu
 
   @@unique([guideId, itemId])
   @@index([guideId])
   @@index([itemId])
   @@index([stepId])
   @@index([reserved])
+  @@index([withdrawnById])
 }
 
 model GuideAssignment {
@@ -565,4 +601,101 @@ model OcrResult {
 
   @@index([stepId])
   @@index([userId])
+}
+
+// New model for tracking guide access
+model GuideAccessLog {
+  id         String          @id @default(cuid())
+  guideId    String
+  guide      ProductionGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User            @relation("UserGuideAccessLogs", fields: [userId], references: [id])
+  accessedAt DateTime        @default(now())
+
+  @@index([guideId])
+  @@index([userId])
+  @@index([accessedAt])
+}
+
+// New models for quality control
+model QualityCheckTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  items       Json // Array of questions/checks
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  qualityChecks QualityCheck[]
+}
+
+model QualityCheck {
+  id          String               @id @default(cuid())
+  templateId  String
+  template    QualityCheckTemplate @relation(fields: [templateId], references: [id])
+  guideId     String?
+  guide       ProductionGuide?     @relation(fields: [guideId], references: [id], onDelete: SetNull)
+  stepId      String?
+  step        ProductionStep?      @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id])
+  results     Json // Results of the checks
+  passed      Boolean              @default(false)
+  notes       String?
+  attachments Attachment[]         @relation("QualityCheckAttachments")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([templateId])
+  @@index([guideId])
+  @@index([stepId])
+  @@index([userId])
+  @@index([passed])
+}
+
+// New models for production scheduling
+model ProductionSchedule {
+  id          String               @id @default(cuid())
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  assignments ScheduleAssignment[]
+  createdById String
+  createdBy   User                 @relation(fields: [createdById], references: [id])
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  isActive    Boolean              @default(true)
+
+  @@index([startDate])
+  @@index([endDate])
+  @@index([createdById])
+  @@index([isActive])
+}
+
+model ScheduleAssignment {
+  id         String             @id @default(cuid())
+  scheduleId String
+  schedule   ProductionSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User               @relation(fields: [userId], references: [id])
+  guideId    String?
+  guide      ProductionGuide?   @relation(fields: [guideId], references: [id], onDelete: SetNull)
+  stepId     String?
+  step       ProductionStep?    @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  startDate  DateTime
+  endDate    DateTime
+  status     String             @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
+  notes      String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([scheduleId])
+  @@index([userId])
+  @@index([guideId])
+  @@index([stepId])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([status])
 }

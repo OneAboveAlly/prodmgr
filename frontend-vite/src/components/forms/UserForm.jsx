@@ -8,7 +8,7 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(!user);
   
-  const { register, handleSubmit, formState: { errors }, reset, /*setValue, watch*/ } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset } = useForm({
     defaultValues: {
       firstName: '',
       lastName: '',
@@ -18,21 +18,18 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
       birthDate: '',
       password: '',
       isActive: true,
-      role: '' // Changed from roles array to single role string
+      role: '' // Zmieniono z tablicy ról na pojedynczą rolę
     }
   });
   
-  // Watch selected role
-  //const selectedRole = watch('role');
-  
-  // Fetch available roles
+  // Pobierz dostępne role
   const { data: rolesData, isLoading: rolesLoading, isError: rolesError } = useQuery({
     queryKey: ['roles'],
     queryFn: () => roleApi.getAll().then(res => res.roles),
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    staleTime: 1000 * 60 * 5 // 5 minut
   });
   
-  // Format date for input field (YYYY-MM-DD)
+  // Formatuj datę dla pola wprowadzania (YYYY-MM-DD)
   const formatDateForInput = (date) => {
     if (!date) return '';
     const d = new Date(date);
@@ -41,11 +38,11 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
       : '';
   };
   
-  // Update form when user data is available
+  // Aktualizuj formularz, gdy dane użytkownika są dostępne
   useEffect(() => {
     if (user) {
-      // For single role selection, take the first role if there are multiple
-      // or leave it empty if there are none
+      // Dla pojedynczego wyboru roli, weź pierwszą rolę, jeśli jest ich wiele
+      // lub pozostaw pustą, jeśli ich nie ma
       const roleId = user.roles?.length > 0 ? user.roles[0].id : '';
       
       reset({
@@ -62,18 +59,18 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
   }, [user, reset]);
   
   const handleFormSubmit = (data) => {
-    // Remove password if it's empty (for edit)
+    // Usuń hasło, jeśli jest puste (dla edycji)
     if (!data.password) {
       delete data.password;
     }
     
-    // Convert single role back to array format for API compatibility
+    // Przekształć pojedynczą rolę z powrotem na format tablicy dla zgodności z API
     const formattedData = {
       ...data,
       roles: data.role ? [data.role] : []
     };
     
-    // Remove the single role field before submitting
+    // Usuń pole pojedynczej roli przed wysłaniem
     delete formattedData.role;
     
     onSubmit(formattedData);
@@ -88,188 +85,216 @@ const UserForm = ({ user, onSubmit, isLoading }) => {
   };
   
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-8 bg-gray-50 p-6 rounded-lg shadow-md">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700">First Name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Imię</label>
           <input
             type="text"
-            {...register('firstName', { required: 'First name is required' })}
-            className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm
-              ${errors.firstName ? 'border-red-500' : ''}`}
+            {...register('firstName', { required: 'Imię jest wymagane' })}
+            className={`block w-full px-4 py-3 rounded-md bg-white border ${errors.firstName ? 'border-red-500' : 'border-gray-300'} 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              hover:border-indigo-300 transition-colors duration-200`}
           />
           {errors.firstName && (
-            <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.firstName.message}</p>
           )}
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700">Last Name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Nazwisko</label>
           <input
             type="text"
-            {...register('lastName', { required: 'Last name is required' })}
-            className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm
-              ${errors.lastName ? 'border-red-500' : ''}`}
+            {...register('lastName', { required: 'Nazwisko jest wymagane' })}
+            className={`block w-full px-4 py-3 rounded-md bg-white border ${errors.lastName ? 'border-red-500' : 'border-gray-300'} 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              hover:border-indigo-300 transition-colors duration-200`}
           />
           {errors.lastName && (
-            <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.lastName.message}</p>
           )}
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700">Login</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Login</label>
           <input
             type="text"
-            {...register('login', { required: 'Login is required' })}
-            className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm
-              ${errors.login ? 'border-red-500' : ''}`}
-            disabled={!!user} // Disable login field in edit mode
+            {...register('login', { required: 'Login jest wymagany' })}
+            className={`block w-full px-4 py-3 rounded-md ${user ? 'bg-gray-100' : 'bg-white'} border ${errors.login ? 'border-red-500' : 'border-gray-300'} 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              ${!user && 'hover:border-indigo-300'} transition-colors duration-200`}
+            disabled={!!user} // Wyłącz pole loginu w trybie edycji
           />
           {errors.login && (
-            <p className="mt-1 text-sm text-red-600">{errors.login.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.login.message}</p>
           )}
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700">Email</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
           <input
             type="email"
             {...register('email', { 
-              required: 'Email is required',
+              required: 'Email jest wymagany',
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: 'Invalid email format'
+                message: 'Nieprawidłowy format emaila'
               }
             })}
-            className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm
-              ${errors.email ? 'border-red-500' : ''}`}
+            className={`block w-full px-4 py-3 rounded-md bg-white border ${errors.email ? 'border-red-500' : 'border-gray-300'} 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              hover:border-indigo-300 transition-colors duration-200`}
           />
           {errors.email && (
-            <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.email.message}</p>
           )}
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Numer telefonu</label>
           <input
             type="text"
             {...register('phoneNumber')}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="block w-full px-4 py-3 rounded-md bg-white border border-gray-300 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              hover:border-indigo-300 transition-colors duration-200"
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700">Birth Date</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Data urodzenia</label>
           <input
             type="date"
             {...register('birthDate')}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="block w-full px-4 py-3 rounded-md bg-white border border-gray-300 
+              shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+              hover:border-indigo-300 transition-colors duration-200"
           />
         </div>
         
         <div>
-          <div className="flex justify-between">
-            <label className="block text-sm font-medium text-gray-700">Password</label>
-            {!user && <span className="text-sm text-gray-500">(Required for new users)</span>}
+          <div className="flex justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-700">Hasło</label>
+            {!user && <span className="text-sm text-gray-500">(Wymagane dla nowych użytkowników)</span>}
           </div>
           <div className="relative">
             <input
               type={showPassword ? "text" : "password"}
               {...register('password', { 
-                required: !user ? 'Password is required for new users' : false,
+                required: !user ? 'Hasło jest wymagane dla nowych użytkowników' : false,
                 minLength: !user || showPassword ? {
                   value: 8,
-                  message: 'Password must be at least 8 characters'
+                  message: 'Hasło musi mieć co najmniej 8 znaków'
                 } : undefined
               })}
-              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm
-                ${errors.password ? 'border-red-500' : ''}`}
+              className={`block w-full px-4 py-3 rounded-md bg-white border ${errors.password ? 'border-red-500' : 'border-gray-300'} 
+                shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 
+                hover:border-indigo-300 transition-colors duration-200 pr-16`}
             />
             <button 
               type="button"
               onClick={toggleShowPassword}
-              className="absolute right-3 top-1/2 -mt-3 text-sm text-gray-500"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 px-2 py-1 text-sm text-indigo-600 
+                bg-white rounded border border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 
+                focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-200"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? 'Ukryj' : 'Pokaż'}
             </button>
           </div>
           {errors.password && (
-            <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.password.message}</p>
           )}
           {user && (
-            <p className="mt-1 text-sm text-gray-500">Leave blank to keep current password</p>
+            <p className="mt-2 text-sm text-gray-500">Pozostaw puste, aby zachować obecne hasło</p>
           )}
         </div>
       </div>
       
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Status</label>
+      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
         <div className="mt-1">
-          <label className="inline-flex items-center">
+          <label className="inline-flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors duration-200">
             <input
               type="checkbox"
               {...register('isActive')}
-              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
             />
-            <span className="ml-2 text-sm text-gray-700">Active</span>
+            <span className="ml-3 text-sm font-medium text-gray-700">Aktywny</span>
           </label>
         </div>
       </div>
       
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+        <label className="block text-sm font-medium text-gray-700 mb-3">Rola</label>
         <div className="mt-1 space-y-2">
-          {rolesLoading && <p>Loading roles...</p>}
-          {rolesError && <p>Error loading roles</p>}
+          {rolesLoading && <p className="p-3 bg-blue-50 text-blue-700 rounded">Ładowanie ról...</p>}
+          {rolesError && <p className="p-3 bg-red-50 text-red-700 rounded">Błąd podczas ładowania ról</p>}
           
-          {/* Radio Group for Role Selection */}
+          {/* Grupa przycisków radiowych dla wyboru roli */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {rolesData?.map(role => (
-              <label key={role.id} className="inline-flex items-center p-2 border rounded hover:bg-gray-50 cursor-pointer">
+              <label key={role.id} className="inline-flex items-center p-3 border border-gray-200 rounded-lg 
+                hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer transition-colors duration-200">
                 <input
                   type="radio"
                   value={role.id}
-                  {...register('role', { required: 'Please select a role' })}
-                  className="rounded-full border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  {...register('role', { required: 'Proszę wybrać rolę' })}
+                  className="h-5 w-5 rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <span className="ml-2 text-sm text-gray-700">{role.name}</span>
+                <span className="ml-3 text-sm font-medium text-gray-700">{role.name}</span>
               </label>
             ))}
           </div>
           
           {errors.role && (
-            <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
+            <p className="mt-2 text-sm text-red-600 font-medium">{errors.role.message}</p>
           )}
           
-          {/* No Role Option */}
+          {/* Opcja bez roli */}
           <div className="mt-4">
-            <label className="inline-flex items-center p-2 border rounded hover:bg-gray-50 cursor-pointer">
+            <label className="inline-flex items-center p-3 border border-gray-200 rounded-lg 
+              hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer transition-colors duration-200">
               <input
                 type="radio"
                 value=""
                 {...register('role')}
-                className="rounded-full border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                className="h-5 w-5 rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
               />
-              <span className="ml-2 text-sm text-gray-700">No Role</span>
+              <span className="ml-3 text-sm font-medium text-gray-700">Brak roli</span>
             </label>
           </div>
         </div>
       </div>
       
-      <div className="flex justify-end space-x-4">
+      <div className="flex justify-end space-x-4 pt-4">
         <button
           type="button"
           onClick={handleCancel}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="px-6 py-3 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 
+            bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 
+            transition-colors duration-200"
         >
-          Cancel
+          Anuluj
         </button>
+        
         <button
           type="submit"
           disabled={isLoading}
-          className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300"
+          className="px-6 py-3 border border-transparent shadow-sm text-sm font-medium rounded-md text-white 
+            bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 
+            disabled:bg-indigo-400 transition-colors duration-200"
         >
-          {isLoading ? 'Saving...' : user ? 'Update User' : 'Create User'}
+          {isLoading ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Zapisywanie...
+            </>
+          ) : (
+            user ? 'Aktualizuj użytkownika' : 'Utwórz użytkownika'
+          )}
         </button>
       </div>
     </form>

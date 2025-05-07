@@ -1,5 +1,5 @@
 // 📁 backend/src/utils/notificationUtils.js
-const sendNotification = async (io, prisma, userId, content, link = '/', createdById = null) => {
+const sendNotification = async (io, prisma, userId, content, link = '/', createdById = null, type = 'SYSTEM', metadata = null) => {
   try {
     // Validate required fields
     if (!userId || !content) {
@@ -7,12 +7,14 @@ const sendNotification = async (io, prisma, userId, content, link = '/', created
       return null;
     }
 
-    // Create the notification with createdById field
+    // Create the notification with createdById field and type
     const notification = await prisma.notification.create({
       data: {
         userId,
         content,
         link,
+        type,
+        metadata: metadata ? JSON.stringify(metadata) : null,
         isRead: false,
         createdById: createdById || userId // Fall back to userId if no creator specified
       }
@@ -28,6 +30,20 @@ const sendNotification = async (io, prisma, userId, content, link = '/', created
     console.error('Error sending notification:', error);
     return null;
   }
+};
+
+// Wersja funkcji dla powiadomień produkcyjnych
+const sendProductionNotification = async (io, prisma, userId, content, link, productionType, createdById = null) => {
+  return sendNotification(
+    io, 
+    prisma, 
+    userId, 
+    content, 
+    link, 
+    createdById, 
+    'PRODUCTION', 
+    { productionType }
+  );
 };
 
 // 🔔 Powiadomienie o wniosku urlopowym
@@ -61,27 +77,16 @@ const notifyLeaveRequest = async (io, prisma, leave) => {
   const link = '/leave';
 
   for (const approver of approvers) {
-    // Zapisz do DB
-    await prisma.notification.create({
-      data: {
-        userId: approver.id,
-        content,
-        link,
-        type: 'SYSTEM'
-      }
-    });
-
-    // Emituj do socket.io
-    const record = await prisma.notification.create({
-      data: {
-        userId: approver.id,
-        content,
-        link,
-        type: 'SYSTEM'
-      }
-    });
-    
-    io.to(`user:${approver.id}`).emit(`notification:${approver.id}`, record);
+    // Emituj do socket.io i zapisz w DB
+    await sendNotification(
+      io,
+      prisma,
+      approver.id,
+      content,
+      link,
+      leave.userId,
+      'LEAVE'
+    );
   }
 };
 
@@ -108,13 +113,16 @@ const notifyLongSession = async (io, prisma, session) => {
       prisma,
       admin.id,
       `${user.firstName} ${user.lastName} pracował ponad 12h w jednej sesji`,
-      '/time-tracking/reports'
+      '/time-tracking/reports',
+      session.userId,
+      'SYSTEM'
     );
   }
 };
 
 module.exports = {
   sendNotification,
+  sendProductionNotification,
   notifyLeaveRequest,
   notifyLongSession,
 };

@@ -11,11 +11,11 @@ const CreateUserPage = () => {
   const createUserMutation = useMutation({
     mutationFn: (userData) => userApi.create(userData),
     onSuccess: () => {
-      toast.success('User created successfully');
+      toast.success('Użytkownik został stworzony');
       navigate('/users');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Error creating user');
+      toast.error(error.response?.data?.message || 'Błąd podczas tworzenia użytkownika');
     }
   });
   
@@ -26,7 +26,7 @@ const CreateUserPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Create New User</h1>
+        <h1 className="text-2xl font-bold mb-6">Stwórz nowego użytkownika</h1>
         <div className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
           <UserForm 
             onSubmit={handleSubmit} 

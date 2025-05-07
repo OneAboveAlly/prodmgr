@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import roleApi from '../../api/role.api';
+import { toast } from 'react-toastify';
 
 const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [expandedModules, setExpandedModules] = useState({});
   const [permissionValues, setPermissionValues] = useState({});
+  const [refreshingPermissions, setRefreshingPermissions] = useState(false);
 
   const {
     register,
@@ -26,34 +29,34 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
 
   //const watchedPermissions = watch('permissions');
 
-  // Notify parent when form is dirty
+  // Powiadomienie rodzica, gdy formularz jest zmieniony
   useEffect(() => {
     if (onChange && isDirty) {
       onChange(true);
     }
   }, [isDirty, onChange]);
 
-  // Get all permissions from API
-  const { data: permissionsData, isLoading: permissionsLoading } = useQuery({
+  // Pobierz wszystkie uprawnienia z API
+  const { data: permissionsData, isLoading: permissionsLoading, refetch: refetchPermissions } = useQuery({
     queryKey: ['permissions'],
     queryFn: () => roleApi.getAllPermissions().then((res) => res.data),
     staleTime: 1000 * 60 * 5,
   });
 
-  // Initialize form and local state when role data is available
+  // Inicjalizacja formularza i lokalnego stanu, gdy dane roli są dostępne
   useEffect(() => {
     if (role) {
-      // Reset form with role data
+      // Reset formularza z danymi roli
       reset({
         name: role.name || '',
         description: role.description || '',
-        permissions: { ...role.permissions } || {},
+        permissions: role.permissions || {},
       });
 
-      // Set local permission values state
-      setPermissionValues({ ...role.permissions } || {});
+      // Ustaw lokalny stan wartości uprawnień
+      setPermissionValues(role.permissions || {});
 
-      // Set expanded modules
+      // Ustaw rozwinięte moduły
       const initialModules = {};
       Object.keys(role.permissions || {}).forEach((permKey) => {
         const module = permKey.split('.')[0];
@@ -67,7 +70,7 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
   const handleFormSubmit = (data) => {
     const cleanPermissions = {};
     
-    // Use our local permissionValues state for the permissions
+    // Użyj naszego lokalnego stanu permissionValues dla uprawnień
     Object.entries(permissionValues).forEach(([key, value]) => {
       const numericValue = parseInt(value, 10);
       if (numericValue > 0) {
@@ -95,21 +98,21 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
   };
 
   const getPermissionValue = (permKey) => {
-    // Use our local state to get the permission value
+    // Użyj lokalnego stanu do pobrania wartości uprawnienia
     const value = permissionValues[permKey];
     if (value === undefined || value === null) return 0;
     return parseInt(value);
   };
 
   const setPermissionValue = (permKey, value) => {
-    // Update the form state
+    // Aktualizacja stanu formularza
     setValue(`permissions.${permKey}`, value, {
       shouldDirty: true,
       shouldTouch: true,
       shouldValidate: true,
     });
     
-    // Update our local state
+    // Aktualizacja lokalnego stanu
     setPermissionValues(prev => ({
       ...prev,
       [permKey]: value
@@ -118,14 +121,38 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
     handlePermissionChange();
   };
 
+  // Funkcja do odświeżania listy uprawnień
+  const refreshPermissions = async () => {
+    try {
+      setRefreshingPermissions(true);
+      
+      try {
+        // Najpierw próbujemy użyć dedykowanego endpointu do odświeżania cache'u
+        await roleApi.refreshPermissionsCache();
+        // Po odświeżeniu cache, odśwież dane
+        await refetchPermissions();
+      } catch (error) {
+        console.warn('Nie można użyć dedykowanego endpointu do odświeżania, przechodzę do unieważnienia zapytania', error);
+        // Jeśli endpoint nie zadziała, po prostu odśwież zapytanie
+        await queryClient.invalidateQueries(['permissions']);
+      }
+      
+      toast.success('Lista uprawnień została odświeżona');
+    } catch {
+      toast.error('Nie udało się odświeżyć listy uprawnień');
+    } finally {
+      setRefreshingPermissions(false);
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
       <div className="grid grid-cols-1 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Role Name</label>
+          <label className="block text-sm font-medium text-gray-700">Nazwa roli</label>
           <input
             type="text"
-            {...register('name', { required: 'Role name is required' })}
+            {...register('name', { required: 'Nazwa roli jest wymagana' })}
             className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm ${
               errors.name ? 'border-red-500' : ''
             }`}
@@ -134,7 +161,7 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
+          <label className="block text-sm font-medium text-gray-700">Opis</label>
           <textarea
             {...register('description')}
             rows={3}
@@ -144,9 +171,20 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
       </div>
 
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Permissions</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Uprawnienia</h3>
+          <button
+            type="button"
+            onClick={refreshPermissions}
+            disabled={refreshingPermissions}
+            className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm leading-5 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            {refreshingPermissions ? 'Odświeżanie...' : 'Odśwież uprawnienia'}
+          </button>
+        </div>
+        
         {permissionsLoading ? (
-          <div className="py-4 text-center">Loading permissions...</div>
+          <div className="py-4 text-center">Ładowanie uprawnień...</div>
         ) : permissionsData ? (
           <div className="border rounded-md divide-y">
             {Object.entries(permissionsData.groupedByModule).map(([moduleName, modulePermissions]) => (
@@ -164,11 +202,11 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permission</th>
-                          <th className="text-center">None</th>
-                          <th className="text-center">View</th>
-                          <th className="text-center">Edit</th>
-                          <th className="text-center">Full</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uprawnienie</th>
+                          <th className="text-center">Brak</th>
+                          <th className="text-center">Podgląd</th>
+                          <th className="text-center">Edycja</th>
+                          <th className="text-center">Pełne</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -203,7 +241,7 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
             ))}
           </div>
         ) : (
-          <div className="py-4 text-center text-red-500">Failed to load permissions.</div>
+          <div className="py-4 text-center text-red-500">Nie udało się załadować uprawnień.</div>
         )}
       </div>
 
@@ -213,14 +251,14 @@ const RoleForm = ({ role, onSubmit, isLoading, onChange }) => {
           onClick={() => navigate('/roles')}
           className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
         >
-          Cancel
+          Anuluj
         </button>
         <button
           type="submit"
           disabled={isLoading}
-          className="px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
-          {isLoading ? 'Saving...' : role ? 'Update Role' : 'Create Role'}
+          {isLoading ? 'Zapisywanie...' : 'Zapisz'}
         </button>
       </div>
     </form>

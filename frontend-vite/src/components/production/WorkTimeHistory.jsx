@@ -28,12 +28,12 @@ const EditTimeEntryModal = ({ entry, isOpen, onClose, onSave }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-white p-6 rounded-lg w-full max-w-md">
-        <h3 className="text-lg font-medium mb-4">Edit Time Entry</h3>
+        <h3 className="text-lg font-medium mb-4">Edycja wpisu czasu pracy</h3>
         
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label htmlFor="timeWorked" className="block text-sm font-medium text-gray-700 mb-1">
-              Duration (minutes) <span className="text-red-500">*</span>
+              Czas trwania (minuty) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -48,7 +48,7 @@ const EditTimeEntryModal = ({ entry, isOpen, onClose, onSave }) => {
           
           <div className="mb-4">
             <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Notes
+              Notatki
             </label>
             <textarea
               id="notes"
@@ -66,14 +66,14 @@ const EditTimeEntryModal = ({ entry, isOpen, onClose, onSave }) => {
               className="px-4 py-2 border border-gray-300 rounded text-gray-700"
               disabled={isSubmitting}
             >
-              Cancel
+              Anuluj
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+              {isSubmitting ? 'Zapisywanie...' : 'Zapisz zmiany'}
             </button>
           </div>
         </form>
@@ -82,7 +82,7 @@ const EditTimeEntryModal = ({ entry, isOpen, onClose, onSave }) => {
   );
 };
 
-const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessage = "No work time entries found." }) => {
+const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessage = "Nie znaleziono wpisów czasu pracy." }) => {
   const { hasPermission } = useAuth();
   const [editingEntry, setEditingEntry] = useState(null);
   const queryClient = useQueryClient();
@@ -91,8 +91,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
   const { 
     data,
     isLoading,
-    isError, 
-    error 
+    isError
   } = useQuery({
     queryKey: ['guideWorkEntries', guideId, stepId],
     queryFn: () => stepId 
@@ -111,7 +110,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
       notes: data.notes
     }),
     onSuccess: () => {
-      toast.success("Time entry updated successfully");
+      toast.success("Wpis czasu pracy zaktualizowany pomyślnie");
       setEditingEntry(null);
       // Refresh the data
       queryClient.invalidateQueries(['guideWorkEntries', guideId, stepId]);
@@ -119,7 +118,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
       if (onTimeUpdate) onTimeUpdate();
     },
     onError: (error) => {
-      toast.error(`Error updating time entry: ${error.message}`);
+      toast.error(`Błąd aktualizacji wpisu czasu pracy: ${error.message}`);
     }
   });
 
@@ -132,7 +131,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
   };
 
   if (isLoading) {
-    return <div className="text-center py-4">Loading work time history...</div>;
+    return <div className="text-center py-4">Ładowanie historii czasu pracy...</div>;
   }
 
   if (isError) {
@@ -150,26 +149,16 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
     return <div className="text-center py-4 text-gray-500">{fallbackMessage}</div>;
   }
 
-  // Group entries by step for better organization
-  const entriesByStep = entries.reduce((acc, entry) => {
-    const stepId = entry.stepId;
-    if (!acc[stepId]) {
-      acc[stepId] = [];
-    }
-    acc[stepId].push(entry);
-    return acc;
-  }, {});
-
   return (
     <div className="work-time-history">
       <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <h3 className="text-lg font-medium">Total time logged: {data.totalTime || 0} minutes</h3>
+          <h3 className="text-lg font-medium">Całkowity zapisany czas: {data.totalTime || 0} minut</h3>
           
           {data.estimatedTotal && (
             <div className="mt-2">
               <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-700">Progress: {Math.round((data.totalTime / data.estimatedTotal) * 100)}%</span>
+                <span className="text-sm text-gray-700">Postęp: {Math.round((data.totalTime / data.estimatedTotal) * 100)}%</span>
                 <span className="text-sm text-gray-700">{data.totalTime}/{data.estimatedTotal} min</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -181,7 +170,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
         
         {userTotals.length > 0 && (
           <div>
-            <h3 className="text-lg font-medium mb-2">Time by user</h3>
+            <h3 className="text-lg font-medium mb-2">Czas według użytkownika</h3>
             <div className="flex flex-wrap gap-2">
               {userTotals.map(user => (
                 <div key={user.userId} className="bg-gray-100 px-3 py-1 rounded-full text-sm">
@@ -197,14 +186,14 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Step</th>
-              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Note</th>
+              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Użytkownik</th>
+              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Krok</th>
+              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Czas trwania</th>
+              <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notatka</th>
               {hasPermission('production', 'manage') && (
                 <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  Akcje
                 </th>
               )}
             </tr>
@@ -225,7 +214,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
                     {entry.step?.title || '-'}
                   </div>
                   {entry.step?.order !== undefined && (
-                    <div className="text-xs text-gray-500">Step {entry.step.order}</div>
+                    <div className="text-xs text-gray-500">Krok {entry.step.order}</div>
                   )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
@@ -240,7 +229,7 @@ const WorkTimeHistory = ({ guideId, stepId, onError, onTimeUpdate, fallbackMessa
                       onClick={() => handleEditTimeEntry(entry)}
                       className="text-indigo-600 hover:text-indigo-900"
                     >
-                      Edit
+                      Edytuj
                     </button>
                   </td>
                 )}

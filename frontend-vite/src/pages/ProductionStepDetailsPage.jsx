@@ -397,7 +397,7 @@ const ProductionStepDetailsPage = () => {
                         }}
                         className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded"
                       >
-                        Reopen Step
+                        Ponów krok
                       </button>
                     )}
                   </div>
@@ -405,7 +405,7 @@ const ProductionStepDetailsPage = () => {
 
                 {step.description && (
                   <div className="mt-4">
-                    <h2 className="text-lg font-semibold mb-2">Description</h2>
+                    <h2 className="text-lg font-semibold mb-2">Opis</h2>
                     <p className="text-gray-700 whitespace-pre-line">{step.description}</p>
                   </div>
                 )}

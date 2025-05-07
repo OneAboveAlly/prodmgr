@@ -7,8 +7,14 @@ import leaveApi from '../api/leave.api';
 import LeaveRequestButton from '../components/leave/LeaveRequestButton';
 import { Link } from 'react-router-dom';
 
+// Helper function to match status regardless of case
+const caseInsensitiveStatusMatch = (status, expectedStatus) => {
+  if (!status) return false;
+  return status.toLowerCase() === expectedStatus.toLowerCase();
+};
+
 const LeavePage = () => {
-  const { user, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState({
@@ -17,7 +23,7 @@ const LeavePage = () => {
     to: ''
   });
   
-  // Fetch user's leave requests
+  // Pobieranie wniosków urlopowych użytkownika
   const { 
     data, 
     isLoading, 
@@ -28,7 +34,7 @@ const LeavePage = () => {
     queryFn: () => leaveApi.getUserLeaves(page, 10, filter).then(res => res.data),
   });
   
-  // Fetch pending leave requests (for managers/admins)
+  // Pobieranie oczekujących wniosków urlopowych (dla managerów/adminów)
   const { 
     data: pendingData, 
     isLoading: pendingLoading 
@@ -38,79 +44,106 @@ const LeavePage = () => {
     enabled: hasPermission('leave', 'approve')
   });
   
-  // Update leave mutation
+  // Mutacja anulowania urlopu
   const cancelLeaveMutation = useMutation({
     mutationFn: (id) => leaveApi.deleteLeaveRequest(id),
     onSuccess: () => {
-      toast.success('Leave request canceled successfully');
+      toast.success('Wniosek urlopowy został pomyślnie anulowany');
       queryClient.invalidateQueries({ queryKey: ['userLeaves'] });
       queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
       queryClient.invalidateQueries({ queryKey: ['dailySummaries'] });
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to cancel leave request');
+      toast.error(error.response?.data?.message || 'Nie udało się anulować wniosku urlopowego');
     }
   });
   
-  // Approve leave mutation
+  // Mutacja zatwierdzania urlopu
   const approveLeaveMutation = useMutation({
     mutationFn: ({ id, notes }) => leaveApi.approveLeave(id, notes),
     onSuccess: () => {
-      toast.success('Leave request approved');
+      toast.success('Wniosek urlopowy został zatwierdzony');
       queryClient.invalidateQueries({ queryKey: ['userLeaves'] });
       queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
       queryClient.invalidateQueries({ queryKey: ['dailySummaries'] });
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to approve leave request');
+      toast.error(error.response?.data?.message || 'Nie udało się zatwierdzić wniosku urlopowego');
     }
   });
   
-  // Reject leave mutation
+  // Mutacja odrzucania urlopu
   const rejectLeaveMutation = useMutation({
     mutationFn: ({ id, notes }) => leaveApi.rejectLeave(id, notes),
     onSuccess: () => {
-      toast.success('Leave request rejected');
+      toast.success('Wniosek urlopowy został odrzucony');
       queryClient.invalidateQueries({ queryKey: ['userLeaves'] });
       queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to reject leave request');
+      toast.error(error.response?.data?.message || 'Nie udało się odrzucić wniosku urlopowego');
     }
   });
   
-  // Handle filter changes
+  // Obsługa zmian filtrów
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilter(prev => ({
       ...prev,
       [name]: value
     }));
-    setPage(1); // Reset to first page on filter change
+    setPage(1); // Resetuj do pierwszej strony przy zmianie filtra
   };
   
-  // Handle page changes
+  // Obsługa zmiany strony
   const handlePageChange = (newPage) => {
     setPage(newPage);
   };
   
-  // Handle leave approval with confirmation
+  // Obsługa zatwierdzania wniosku urlopowego z potwierdzeniem
   const handleApproveLeave = (id) => {
-    const notes = prompt('Optional: Add notes for this approval');
-    approveLeaveMutation.mutate({ id, notes: notes || '' });
-  };
-  
-  // Handle leave rejection with confirmation
-  const handleRejectLeave = (id) => {
-    const notes = prompt('Please provide a reason for rejection');
-    if (notes) {
-      rejectLeaveMutation.mutate({ id, notes });
+    // Use confirm dialogue first to avoid accidental approvals
+    if (window.confirm('Czy na pewno chcesz zatwierdzić ten wniosek urlopowy?')) {
+      const notes = prompt('Opcjonalnie: Dodaj notatki do tego zatwierdzenia (lub kliknij Anuluj/Cancel, aby zatwierdzić bez notatek)');
+      
+      // Handle approval
+      approveLeaveMutation.mutate(
+        { id, notes: notes || '' },
+        {
+          onError: (error) => {
+            console.error('Error details:', error);
+            const errorMessage = error.response?.data?.message || 'Nie udało się zatwierdzić wniosku urlopowego';
+            toast.error(errorMessage);
+          }
+        }
+      );
     }
   };
   
-  // Handle leave cancellation with confirmation
+  // Obsługa odrzucania wniosku urlopowego z potwierdzeniem
+  const handleRejectLeave = (id) => {
+    if (window.confirm('Czy na pewno chcesz odrzucić ten wniosek urlopowy?')) {
+      const notes = prompt('Podaj powód odrzucenia wniosku');
+      if (notes) {
+        rejectLeaveMutation.mutate(
+          { id, notes },
+          {
+            onError: (error) => {
+              console.error('Error details:', error);
+              const errorMessage = error.response?.data?.message || 'Nie udało się odrzucić wniosku urlopowego';
+              toast.error(errorMessage);
+            }
+          }
+        );
+      } else {
+        toast.warning('Powód odrzucenia jest wymagany');
+      }
+    }
+  };
+  
+  // Obsługa anulowania wniosku urlopowego z potwierdzeniem
   const handleCancelLeave = (id) => {
-    if (window.confirm('Are you sure you want to cancel this leave request?')) {
+    if (window.confirm('Czy na pewno chcesz anulować ten wniosek urlopowy?')) {
       cancelLeaveMutation.mutate(id);
     }
   };
@@ -118,7 +151,7 @@ const LeavePage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Leave Management</h1>
+        <h1 className="text-2xl font-bold">Zarządzanie urlopami</h1>
         
         <div className="flex gap-2">
           {hasPermission('leave', 'create') && (
@@ -130,22 +163,22 @@ const LeavePage = () => {
               to="/leave/types"
               className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
             >
-              Manage Leave Types
+              Zarządzaj typami urlopów
             </Link>
           )}
         </div>
       </div>
       
-      {/* Pending Requests Section (for managers/admins) */}
+      {/* Sekcja oczekujących wniosków (dla managerów/adminów) */}
       {hasPermission('leave', 'approve') && (
         <div className="mb-8">
-          <h2 className="text-lg font-semibold mb-3">Pending Approval Requests</h2>
+          <h2 className="text-lg font-semibold mb-3">Wnioski oczekujące na zatwierdzenie</h2>
           
           {pendingLoading ? (
-            <div className="bg-white p-6 rounded-lg shadow text-center">Loading pending requests...</div>
+            <div className="bg-white p-6 rounded-lg shadow text-center">Ładowanie oczekujących wniosków...</div>
           ) : pendingData?.leaves?.length === 0 ? (
             <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500">
-              No pending leave requests to approve
+              Brak oczekujących wniosków urlopowych do zatwierdzenia
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -154,22 +187,22 @@ const LeavePage = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Employee
+                        Pracownik
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
+                        Typ
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Period
+                        Okres
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
+                        Czas trwania
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Notes
+                        Notatki
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
+                        Akcje
                       </th>
                     </tr>
                   </thead>
@@ -194,12 +227,12 @@ const LeavePage = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
-                          {leave.halfDay && ` (Half day${leave.morning ? ' morning' : ' afternoon'})`}
+                          {leave.halfDay && ` (Pół dnia${leave.morning ? ' rano' : ' popołudnie'})`}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {leave.halfDay 
-                            ? '0.5 day' 
-                            : `${Math.ceil((new Date(leave.endDate) - new Date(leave.startDate)) / (1000 * 60 * 60 * 24)) + 1} days`
+                            ? '0.5 dnia' 
+                            : `${Math.ceil((new Date(leave.endDate) - new Date(leave.startDate)) / (1000 * 60 * 60 * 24)) + 1} dni`
                           }
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
@@ -211,14 +244,14 @@ const LeavePage = () => {
                             disabled={approveLeaveMutation.isPending}
                             className="text-green-600 hover:text-green-900 mr-3"
                           >
-                            Approve
+                            Zatwierdź
                           </button>
                           <button
                             onClick={() => handleRejectLeave(leave.id)}
                             disabled={rejectLeaveMutation.isPending}
                             className="text-red-600 hover:text-red-900"
                           >
-                            Reject
+                            Odrzuć
                           </button>
                         </td>
                       </tr>
@@ -231,7 +264,7 @@ const LeavePage = () => {
                 <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200">
                   <div className="flex-1 flex justify-between">
                     <span className="text-sm text-gray-700">
-                      Showing {pendingData.leaves.length} of {pendingData.pagination.total} requests
+                      Pokazano {pendingData.leaves.length} z {pendingData.pagination.total} wniosków
                     </span>
                   </div>
                 </div>
@@ -241,182 +274,273 @@ const LeavePage = () => {
         </div>
       )}
       
-      {/* My Leave Requests Section */}
+      {/* Sekcja moich wniosków urlopowych */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">My Leave Requests</h2>
+        <h2 className="text-lg font-semibold mb-3">Moje wnioski urlopowe</h2>
         
-        {/* Filters */}
+        {/* Filtry */}
         <div className="bg-white p-4 rounded-lg shadow mb-4">
           <div className="flex flex-wrap gap-4">
+            {/* Status filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
               <select
+                id="status"
                 name="status"
                 value={filter.status}
                 onChange={handleFilterChange}
-                className="border border-gray-300 rounded-md shadow-sm p-2 text-sm"
+                className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option value="">Wszystkie statusy</option>
+                <option value="pending">Oczekujące</option>
+                <option value="approved">Zatwierdzone</option>
+                <option value="rejected">Odrzucone</option>
               </select>
             </div>
             
+            {/* Date range filters */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+              <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
+                Od daty
+              </label>
               <input
                 type="date"
+                id="from"
                 name="from"
                 value={filter.from}
                 onChange={handleFilterChange}
-                className="border border-gray-300 rounded-md shadow-sm p-2 text-sm"
+                className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+              <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
+                Do daty
+              </label>
               <input
                 type="date"
+                id="to"
                 name="to"
                 value={filter.to}
                 onChange={handleFilterChange}
-                min={filter.from}
-                className="border border-gray-300 rounded-md shadow-sm p-2 text-sm"
+                className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
               />
+            </div>
+            
+            {/* Reset filters button */}
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFilter({ status: '', from: '', to: '' });
+                  setPage(1);
+                }}
+                className="h-10 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Resetuj filtry
+              </button>
             </div>
           </div>
         </div>
         
-        {/* Leave Requests Table */}
+        {/* Data display */}
         {isLoading ? (
-          <div className="bg-white p-6 rounded-lg shadow text-center">Loading your leave requests...</div>
+          <div className="bg-white p-6 rounded-lg shadow text-center">Ładowanie wniosków urlopowych...</div>
         ) : isError ? (
-          <div className="bg-red-100 p-4 rounded-md text-red-700">
-            Error: {error?.message || 'Failed to load leave requests'}
+          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4">
+            <p>Błąd podczas ładowania wniosków urlopowych: {error?.message}</p>
           </div>
         ) : data?.leaves?.length === 0 ? (
           <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500">
-            No leave requests found
+            Nie znaleziono wniosków urlopowych.
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Period
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Duration
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Notes
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {data?.leaves?.map(leave => (
-                    <tr key={leave.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span 
-                          className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full"
-                          style={{ 
-                            backgroundColor: `${leave.leaveType.color}20`,
-                            color: leave.leaveType.color
-                          }}
-                        >
-                          {leave.leaveType.name}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
-                        {leave.halfDay && ` (Half day${leave.morning ? ' morning' : ' afternoon'})`}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {leave.halfDay 
-                          ? '0.5 day' 
-                          : `${Math.ceil((new Date(leave.endDate) - new Date(leave.startDate)) / (1000 * 60 * 60 * 24)) + 1} days`
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span 
-                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            leave.status === 'pending' 
-                              ? 'bg-yellow-100 text-yellow-800' 
-                              : leave.status === 'approved'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {leave.status.charAt(0).toUpperCase() + leave.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                        {leave.notes || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {leave.status === 'pending' && (
-                          <button
-                            onClick={() => handleCancelLeave(leave.id)}
-                            disabled={cancelLeaveMutation.isPending}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </td>
+          <>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Typ
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Okres
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Czas trwania
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Notatki
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Akcje
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Pagination */}
-            {data?.pagination && data.pagination.pages > 1 && (
-              <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200">
-                <div className="flex-1 flex justify-between">
-                  <button
-                    onClick={() => handlePageChange(page - 1)}
-                    disabled={page === 1}
-                    className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
-                      page === 1
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Previous
-                  </button>
-                  
-                  <span className="text-sm text-gray-700">
-                    Page {page} of {data.pagination.pages}
-                  </span>
-                  
-                  <button
-                    onClick={() => handlePageChange(page + 1)}
-                    disabled={page === data.pagination.pages}
-                    className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
-                      page === data.pagination.pages
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Next
-                  </button>
-                </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {data.leaves.map(leave => (
+                      <tr key={leave.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span 
+                            className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full"
+                            style={{ 
+                              backgroundColor: `${leave.leaveType.color}20`,
+                              color: leave.leaveType.color
+                            }}
+                          >
+                            {leave.leaveType.name}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
+                          {leave.halfDay && ` (Pół dnia${leave.morning ? ' rano' : ' popołudnie'})`}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {leave.halfDay 
+                            ? '0.5 dnia' 
+                            : `${Math.ceil((new Date(leave.endDate) - new Date(leave.startDate)) / (1000 * 60 * 60 * 24)) + 1} dni`
+                          }
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            caseInsensitiveStatusMatch(leave.status, 'pending') 
+                              ? 'bg-yellow-100 text-yellow-800' 
+                              : caseInsensitiveStatusMatch(leave.status, 'approved') 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                          }`}>
+                            {caseInsensitiveStatusMatch(leave.status, 'pending') ? 'Oczekujący' : 
+                             caseInsensitiveStatusMatch(leave.status, 'approved') ? 'Zatwierdzony' : 
+                             'Odrzucony'}
+                          </span>
+                          {leave.actionNotes && (
+                            <div className="text-xs mt-1 text-gray-500">
+                              {caseInsensitiveStatusMatch(leave.status, 'approved') ? 'Notatka zatwierdzenia: ' : 'Powód odrzucenia: '}
+                              {leave.actionNotes}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                          {leave.notes || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          {caseInsensitiveStatusMatch(leave.status, 'pending') && (
+                            <button
+                              onClick={() => handleCancelLeave(leave.id)}
+                              disabled={cancelLeaveMutation.isPending}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              Anuluj
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
+              
+              {data.pagination.pages > 1 && (
+                <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 flex justify-between sm:hidden">
+                      <button
+                        onClick={() => handlePageChange(Math.max(1, page - 1))}
+                        disabled={page === 1}
+                        className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                          page === 1 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        Poprzednia
+                      </button>
+                      <button
+                        onClick={() => handlePageChange(Math.min(data.pagination.pages, page + 1))}
+                        disabled={page === data.pagination.pages}
+                        className={`ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                          page === data.pagination.pages 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        Następna
+                      </button>
+                    </div>
+                    <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm text-gray-700">
+                          Pokazano <span className="font-medium">{(page - 1) * 10 + 1}</span> do{' '}
+                          <span className="font-medium">
+                            {Math.min(page * 10, data.pagination.total)}
+                          </span>{' '}
+                          z <span className="font-medium">{data.pagination.total}</span> wniosków
+                        </p>
+                      </div>
+                      <div>
+                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                          <button
+                            onClick={() => handlePageChange(Math.max(1, page - 1))}
+                            disabled={page === 1}
+                            className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                          >
+                            <span className="sr-only">Poprzednia</span>
+                            <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                          
+                          {/* Page Number Buttons */}
+                          {Array.from({ length: data.pagination.pages }, (_, i) => i + 1)
+                            .filter(pageNum => 
+                              pageNum === 1 || 
+                              pageNum === data.pagination.pages || 
+                              (pageNum >= page - 1 && pageNum <= page + 1)
+                            )
+                            .map((pageNum, i, filteredPages) => (
+                              <React.Fragment key={pageNum}>
+                                {i > 0 && filteredPages[i - 1] !== pageNum - 1 && (
+                                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                    ...
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => handlePageChange(pageNum)}
+                                  className={`relative inline-flex items-center px-4 py-2 border ${
+                                    page === pageNum
+                                      ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
+                                      : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                                  } text-sm font-medium`}
+                                >
+                                  {pageNum}
+                                </button>
+                              </React.Fragment>
+                            ))
+                          }
+                          
+                          <button
+                            onClick={() => handlePageChange(Math.min(data.pagination.pages, page + 1))}
+                            disabled={page === data.pagination.pages}
+                            className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                          >
+                            <span className="sr-only">Następna</span>
+                            <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        </nav>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

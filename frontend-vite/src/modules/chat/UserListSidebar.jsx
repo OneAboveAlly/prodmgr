@@ -1,39 +1,64 @@
-import React, { useEffect, useState } from 'react';
-import api from '@/services/api.service';
-import { socket } from '@/socket';
+import React, { useEffect, useState, useRef } from 'react';
+import api from '../../services/api.service';
+import { socket } from '../../socket';
 import clsx from 'clsx';
 
 const UserListSidebar = ({ onSelectUser, selectedUser }) => {
   const [users, setUsers] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const isMounted = useRef(false);
 
   useEffect(() => {
+    isMounted.current = true;
+    
     const fetchUsers = async () => {
       try {
-        const { data } = await api.get('/users');
-        const filtered = data.filter((u) => u.id !== selectedUser?.id);  // Ensure we don't select the current user
-        console.log('📦 Fetched users:', data);
-        console.log('🧹 Filtered users (excluding self):', filtered);
-        setUsers(filtered);
+        const { data } = await api.get('/chat/users');
+        if (isMounted.current) {
+          const filtered = data.filter((u) => u.id !== selectedUser?.id);  // Ensure we don't select the current user
+          console.log('📦 Fetched users:', data);
+          console.log('🧹 Filtered users (excluding self):', filtered);
+          setUsers(filtered);
+        }
       } catch (err) {
         console.error('❌ Error fetching users:', err);
       }
     };
 
-    fetchUsers();
+    // Owinięcie w setTimeout 0 zapobiega aktualizacji stanu podczas renderowania
+    setTimeout(() => {
+      if (isMounted.current) {
+        fetchUsers();
+      }
+    }, 0);
+    
+    return () => {
+      isMounted.current = false;
+    };
   }, [selectedUser]);
 
   useEffect(() => {
+    isMounted.current = true;
+    
     const handleOnlineUsers = (onlineIds) => {
       console.log('🟢 Online users from socket:', onlineIds);
-      setOnlineUsers(onlineIds);
+      if (isMounted.current) {
+        setOnlineUsers(onlineIds);
+      }
     };
 
     socket.on('chat:onlineUsers', handleOnlineUsers);
-    socket.emit('chat:getOnlineUsers');
-    console.log('📨 Emitted request: chat:getOnlineUsers');
+    
+    // Owijamy wywołanie socket.emit w setTimeout 0, aby zapewnić, że komponent został już zamontowany
+    setTimeout(() => {
+      if (isMounted.current) {
+        socket.emit('chat:getOnlineUsers');
+        console.log('📨 Emitted request: chat:getOnlineUsers');
+      }
+    }, 0);
 
     return () => {
+      isMounted.current = false;
       socket.off('chat:onlineUsers', handleOnlineUsers);
     };
   }, []);

@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../contexts/AuthContext';
+import yourLogo from '../assets/logos/your_logo.png'; //Zmień na swoje Logo
 
 const LoginPage = () => {
   const { login } = useAuth();
@@ -23,10 +24,10 @@ const LoginPage = () => {
     setIsLoading(true);
     try {
       await login(data);
-      toast.success('Login successful');
+      toast.success('Zalogowano pomyślnie');
       navigate(redirectPath, { replace: true });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Login failed');
+      toast.error(error.response?.data?.message || 'Logowanie nie powiodło się');
     } finally {
       setIsLoading(false);
     }
@@ -36,11 +37,18 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
+          <div className="flex justify-center">
+            <img 
+              src={yourLogo} 
+              alt="Your Logo" 
+              className="h-52 mx-auto"
+            />
+          </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Production Manager
+            Menadżer Produkcji
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Please sign in to continue
+            Zaloguj się, aby kontynuować
           </p>
         </div>
         
@@ -51,7 +59,7 @@ const LoginPage = () => {
               <input
                 id="login"
                 type="text"
-                {...register('login', { required: 'Login is required' })}
+                {...register('login', { required: 'Login jest wymagany' })}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Login"
               />
@@ -60,13 +68,13 @@ const LoginPage = () => {
               )}
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
+              <label htmlFor="password" className="sr-only">Hasło</label>
               <input
                 id="password"
                 type="password"
-                {...register('password', { required: 'Password is required' })}
+                {...register('password', { required: 'Hasło jest wymagane' })}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                placeholder="Hasło"
               />
               {errors.password && (
                 <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
@@ -94,7 +102,7 @@ const LoginPage = () => {
                   </svg>
                 </span>
               )}
-              {isLoading ? 'Signing in...' : 'Sign in'}
+              {isLoading ? 'Logowanie...' : 'Zaloguj się'}
             </button>
           </div>
         </form>

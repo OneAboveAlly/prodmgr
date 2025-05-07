@@ -7,88 +7,88 @@ const permissions = [
   {
     module: 'production',
     action: 'read',
-    description: 'View production guides'
+    description: 'Podgląd przewodników produkcyjnych'
   },
   {
     module: 'production',
     action: 'create',
-    description: 'Create new production guides'
+    description: 'Tworzenie nowych przewodników produkcyjnych'
   },
   {
     module: 'production',
     action: 'update',
-    description: 'Edit production guides'
+    description: 'Aktualizacja przewodników produkcyjnych'
   },
   {
     module: 'production',
     action: 'delete',
-    description: 'Delete production guides'
+    description: 'Usuwanie przewodników produkcyjnych'
   },
   {
     module: 'production',
     action: 'work',
-    description: 'Perform work on production steps'
+    description: 'Praca nad przewodnikami (rejestrowanie czasu)'
   },
   {
     module: 'production',
     action: 'manageAll',
-    description: 'Full management of production and all steps'
+    description: 'Zaawansowane zarządzanie produkcją i przewodnikami'
   },
   {
     module: 'production',
     action: 'assign',
-    description: 'Assign users to production guides and steps'
+    description: 'Przypisywanie użytkowników do przewodników'
   },
 
   // Inventory
   {
     module: 'inventory',
     action: 'read',
-    description: 'View inventory items'
+    description: 'Podgląd magazynu i stanów magazynowych'
   },
   {
     module: 'inventory',
     action: 'create',
-    description: 'Add new inventory items'
+    description: 'Tworzenie nowych pozycji magazynowych'
   },
   {
     module: 'inventory',
     action: 'update',
-    description: 'Edit inventory items'
+    description: 'Aktualizacja pozycji magazynowych'
   },
   {
     module: 'inventory',
     action: 'manage',
-    description: 'Manage reservations and inventory levels'
+    description: 'Zarządzanie zarezerwowanymi przedmiotami i poziomami magazynowymi'
   },
   
   // Statistics
   {
     module: 'statistics',
     action: 'read',
-    description: 'View basic statistics'
+    description: 'Podgląd podstawowych statystyk'
   },
   {
     module: 'statistics',
     action: 'viewReports',
-    description: 'View detailed reports and analytics'
+    description: 'Podgląd szczegółowych raportów i analiz'
   },
   {
     module: 'statistics',
     action: 'export',
-    description: 'Export statistics and reports'
+    description: 'Eksportowanie statystyk i raportów'
   },
   
   // OCR
   {
     module: 'ocr',
     action: 'process',
-    description: 'Process images with OCR'
+    description: 'Przetwarzanie obrazów za pomocą OCR'
   },
   {
     module: 'ocr',
     action: 'manage',
-    description: 'Manage OCR results'
+    description: 'Zarządzanie wynikami OCR'
   }
 ];
 

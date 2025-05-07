@@ -1,93 +1,122 @@
 // frontend-vite/src/components/production/ProgressBar.jsx
-import React from 'react';
-import { normalizeGuideData } from '../../utils/guideUtils';
+import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
+import { calculateGuideProgress } from '../../utils/progressCalculator';
+import api from '../../services/api.service';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { Tooltip } from 'react-tooltip';
 
 /**
- * Reusable progress bar component for production guides
- * Enhanced with improved data normalization and error handling
+ * Ultra simplified progress bar component for production guides
+ * Direct calculation without any dependencies
  */
-const ProgressBar = ({ guide, className = "", compact = false }) => {
-  // Normalize guide data to ensure consistent structure
-  const normalizedGuide = normalizeGuideData(guide);
-  
-  // Safety check for missing data
-  if (!normalizedGuide || !normalizedGuide.steps || normalizedGuide.steps.length === 0) {
-    console.debug('ProgressBar: Missing guide data or steps', guide);
-    return null;
-  }
-  
-  // Calculate progress using the same logic across all pages
-  const calculateProgress = () => {
-    try {
-      // Validate and fix inconsistent data
-      const steps = normalizedGuide.steps.map(step => ({
-        ...step,
-        estimatedTime: Number(step.estimatedTime || 0),
-        actualTime: Number(step.actualTime || 0),
-        // Fix for completed steps with no time - assume they took estimated time
-        ...(step.status === 'COMPLETED' && Number(step.actualTime || 0) === 0 ? 
-            { actualTime: Number(step.estimatedTime || 0) } : {})
-      }));
+const ProgressBar = ({ guide, compact = false, autoUpdateStatus = true, className = '' }) => {
+  const queryClient = useQueryClient();
+  const [progress, setProgress] = useState(0);
+  const [tooltipId] = useState(`progress-tooltip-${Math.random().toString(36).substr(2, 9)}`);
 
-      // Calculate time totals using fixed data
-      const totalEstimatedTime = steps.reduce((sum, step) => sum + step.estimatedTime, 0);
-      const totalActualTime = steps.reduce((sum, step) => sum + step.actualTime, 0);
-      
-      // Always prefer time-based calculation when estimated time exists
-      if (totalEstimatedTime > 0) {
-        const progress = Math.min(100, Math.round((totalActualTime / totalEstimatedTime) * 100));
-        return progress;
+  useEffect(() => {
+    if (guide && guide.steps) {
+      // Użyj nowej wersji funkcji calculateGuideProgress, która zwraca liczbę
+      const calculatedProgress = calculateGuideProgress(guide);
+      setProgress(calculatedProgress);
+    }
+  }, [guide]);
+
+  // Funkcja do aktualizacji statusu przewodnika, gdy postęp osiągnie 100%
+  const updateGuideStatusWhenComplete = async () => {
+    if (
+      autoUpdateStatus &&
+      guide?.id && 
+      progress >= 100 && 
+      guide.status !== 'COMPLETED'
+    ) {
+      try {
+        await api.put(`/production/guides/${guide.id}`, {
+          status: 'COMPLETED'
+        });
+        
+        // Odświeżenie cache po aktualizacji
+        queryClient.invalidateQueries({ queryKey: ['productionGuide', guide.id] });
+        queryClient.invalidateQueries({ queryKey: ['productionGuides'] });
+        
+        toast.success('Status przewodnika zaktualizowany do "Zakończony"');
+      } catch (error) {
+        console.error('Error updating guide status:', error);
       }
-      
-      // Fall back to step-based progress ONLY when no time data available
-      const totalSteps = steps.length;
-      const completedSteps = steps.filter(step => step.status === 'COMPLETED').length;
-      const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
-      return progress;
-    } catch (error) {
-      console.error('Error calculating progress:', error, normalizedGuide);
-      return 0; // Safe default
     }
   };
+
+  // Efekt, który uruchamia aktualizację statusu przy zmianach procentu ukończenia
+  useEffect(() => {
+    if (progress >= 100) {
+      updateGuideStatusWhenComplete();
+    }
+  }, [progress, guide?.id, guide?.status]);
   
-  const progressPercent = calculateProgress();
-  
-  // Get time data consistently
-  const totalActualTime = normalizedGuide.stats?.time?.totalActualTime || 
-    normalizedGuide.steps.reduce((sum, step) => sum + (Number(step.actualTime) || 0), 0) || 0;
-    
-  const totalEstimatedTime = normalizedGuide.stats?.time?.totalEstimatedTime || 
-    normalizedGuide.steps.reduce((sum, step) => sum + (Number(step.estimatedTime) || 0), 0) || 0;
-    
-  const completedSteps = normalizedGuide.steps.filter(s => s.status === 'COMPLETED').length || 0;
-  const totalSteps = normalizedGuide.steps.length || 0;
-  
-  // Use compact styling when used in cards/list views
-  const headingClass = compact ? "text-sm font-medium" : "text-lg font-semibold";
-  const containerClass = compact ? "mt-4" : "mt-6";
-  
-  return (
-    <div className={`${containerClass} ${className}`}>
-      <div className="flex justify-between items-center mb-2">
-        <h2 className={headingClass}>Progress</h2>
-        <span className="text-sm font-medium text-gray-700">{progressPercent}%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
+  // Safety check for missing data
+  if (!guide || !guide.steps) {
+    return null;
+  }
+
+  // Color classes based on progress
+  let colorClass = 'bg-gray-200'; // default - no progress
+  if (progress > 0) colorClass = 'bg-blue-500';
+  if (progress >= 75) colorClass = 'bg-green-500';
+  if (progress === 100) colorClass = 'bg-emerald-600';
+
+  // For compact view (in lists)
+  if (compact) {
+    return (
+      <div className={`w-full ${className}`}>
+        <div className="flex justify-end items-center mb-1">
+          <span className="text-xs font-medium text-gray-600">{progress}%</span>
+        </div>
         <div 
-          className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
-          style={{ width: `${progressPercent}%` }}
+          className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden"
+          data-tooltip-id={tooltipId}
+          data-tooltip-content={`Postęp: ${progress}%`}
+        >
+          <div
+            className={`h-full ${colorClass} transition-all duration-300`}
+            style={{ width: `${progress}%` }}
+          ></div>
+          <Tooltip id={tooltipId} />
+        </div>
+      </div>
+    );
+  }
+
+  // For detailed view
+  return (
+    <div className={`w-full ${className}`}>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-sm font-medium">
+          Postęp prac
+        </span>
+        <span className="text-sm font-medium">{progress}%</span>
+      </div>
+      <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${colorClass} transition-all duration-300`}
+          style={{ width: `${progress}%` }}
         ></div>
       </div>
-      <div className="flex justify-between mt-1 text-xs text-gray-500">
-        <span>
-          Time: {totalActualTime} / {totalEstimatedTime} min
-        </span>
-        <span>
-          Steps: {completedSteps} / {totalSteps}
-        </span>
-      </div>
+      {progress >= 100 && guide.status !== 'COMPLETED' && autoUpdateStatus && (
+        <div className="text-xs text-green-600 mt-1 animate-pulse">
+          Automatyczna aktualizacja statusu na Zakończony...
+        </div>
+      )}
     </div>
   );
+};
+
+ProgressBar.propTypes = {
+  guide: PropTypes.object.isRequired,
+  compact: PropTypes.bool,
+  autoUpdateStatus: PropTypes.bool,
+  className: PropTypes.string
 };
 
 export default ProgressBar;

@@ -347,9 +347,87 @@ export function ChatProvider({ children }) {
           [userId]: sortedMessages
         };
       });
+      
+      // Oznacz wszystkie wiadomości od wybranego użytkownika jako przeczytane
+      await markMessagesAsRead(userId);
     } catch (err) {
       console.error('❌ Błąd pobierania wiadomości:', err);
     }
+  }, [user]);
+
+  // Oznaczanie wiadomości jako przeczytanych
+  const markMessagesAsRead = useCallback(async (senderId) => {
+    if (!user || !senderId) return;
+    
+    try {
+      // Oznacz wiadomości jako przeczytane w bazie danych
+      await api.post(`/chat/${senderId}/read`);
+      
+      // Aktualizuj lokalny stan wiadomości
+      setMessages(prev => {
+        // Jeśli nie ma wiadomości od tego użytkownika, nic nie zmieniaj
+        if (!prev[senderId]) return prev;
+        
+        // Zaktualizuj status odczytania dla wszystkich wiadomości od tego użytkownika
+        const updatedMessages = prev[senderId].map(msg => {
+          // Aktualizuj tylko wiadomości od wybranego użytkownika
+          if (msg.senderId === senderId && !msg.isRead) {
+            return { ...msg, isRead: true };
+          }
+          return msg;
+        });
+        
+        // Emituj zdarzenie socket, informując nadawcę, że jego wiadomości zostały odczytane
+        socket.emit('message:read', {
+          senderId: user.id,
+          receiverId: senderId
+        });
+        
+        return {
+          ...prev,
+          [senderId]: updatedMessages
+        };
+      });
+    } catch (err) {
+      console.error('❌ Błąd oznaczania wiadomości jako przeczytanych:', err);
+    }
+  }, [user]);
+
+  // Nasłuchiwanie na potwierdzenia odczytania wiadomości
+  useEffect(() => {
+    if (!user) return;
+    
+    const handleMessagesRead = (data) => {
+      const { senderId, receiverId } = data;
+      
+      // Aktualizujemy tylko jeśli to nasze wiadomości zostały odczytane
+      if (receiverId !== user.id) return;
+      
+      setMessages(prev => {
+        // Jeśli nie ma wiadomości dla tego użytkownika, nic nie zmieniaj
+        if (!prev[senderId]) return prev;
+        
+        // Zaktualizuj status odczytania dla wszystkich wiadomości do tego użytkownika
+        const updatedMessages = prev[senderId].map(msg => {
+          // Aktualizuj tylko nasze wiadomości wysłane do tego użytkownika
+          if (msg.senderId === user.id && msg.receiverId === senderId && !msg.isRead) {
+            return { ...msg, isRead: true };
+          }
+          return msg;
+        });
+        
+        return {
+          ...prev,
+          [senderId]: updatedMessages
+        };
+      });
+    };
+    
+    socket.on('message:read', handleMessagesRead);
+    
+    return () => {
+      socket.off('message:read', handleMessagesRead);
+    };
   }, [user]);
 
   // Wysyłanie nowej wiadomości
@@ -502,7 +580,8 @@ export function ChatProvider({ children }) {
     sendMessage,
     fetchMessagesForUser,
     deleteMessage,
-    toggleMyVisibility
+    toggleMyVisibility,
+    markMessagesAsRead
   };
 
   return (

@@ -1,114 +1,220 @@
 # Production Manager
 
-A comprehensive production management system with authentication, user management, and a modern UI.
+System do zarządzania produkcją z kompleksowymi funkcjami śledzenia procesów produkcyjnych, zarządzania użytkownikami, kontroli jakości i planowania.
 
-## Project Structure
+## O projekcie
 
-- **Backend**: Node.js/Express API with PostgreSQL database (using Prisma ORM)
-- **Frontend**: React application with Tailwind CSS
+Ten projekt został stworzony jako część portfolio, demonstrujący umiejętności w zakresie:
+- Full-stack development (Node.js, React)
+- Zarządzania bazą danych (PostgreSQL)
+- Implementacji systemów autentykacji
+- Tworzenia interfejsów użytkownika
+- Integracji różnych technologii i bibliotek
 
-## Prerequisites
+### Proces tworzenia
+Projekt został zbudowany przy współpracy z AI, gdzie:
+- AI pomagało w generowaniu kodu i sugerowaniu rozwiązań
+- Każda część kodu była analizowana i modyfikowana
+- Implementacja była dostosowywana do specyficznych potrzeb
+- Uczyłem się nowych koncepcji i rozwiązań podczas procesu
 
-- Node.js (v14 or higher)
-- PostgreSQL database
-- npm or yarn
+## Architektura projektu
 
-## Getting Started
+### Backend
+- **Framework**: Node.js z Express
+- **Baza danych**: PostgreSQL z ORM Prisma
+- **Autentykacja**: JWT z tokenami dostępu i odświeżania
+- **Komunikacja w czasie rzeczywistym**: Socket.IO
+- **Planowanie zadań**: node-cron
 
-### Backend Setup
+### Frontend
+- **Framework**: React z Vite
+- **Routing**: React Router
+- **Zarządzanie stanem**: React Query
+- **Stylowanie**: Tailwind CSS
+- **Wizualizacja danych**: Recharts
+- **Drag & Drop**: @dnd-kit/core
+- **Powiadomienia**: react-toastify
+- **Formularze**: react-hook-form
 
-1. Navigate to the backend directory:
+## Wymagania systemowe
+
+- Node.js (v14 lub wyższy)
+- PostgreSQL
+- npm lub yarn
+
+## Uruchamianie projektu
+
+### Konfiguracja backendu
+
+1. Przejdź do katalogu backendu:
    ```
    cd backend
    ```
 
-2. Install dependencies:
+2. Zainstaluj zależności:
    ```
    npm install
    ```
 
-3. Create a `.env` file in the backend directory with the following variables:
+3. Utwórz plik `.env` w katalogu backend z następującymi zmiennymi:
    ```
    DATABASE_URL="postgresql://username:password@localhost:5432/production_manager"
-   JWT_SECRET="your-jwt-secret-key"
-   JWT_REFRESH_SECRET="your-jwt-refresh-secret-key"
-   PORT=3000
+   JWT_SECRET="twoj-klucz-tajny-jwt"
+   JWT_REFRESH_SECRET="twoj-klucz-tajny-jwt-refresh"
+   PORT=5000
+   FRONTEND_URL=http://localhost:5173
    ```
 
-4. Apply database migrations:
+4. Zastosuj migracje bazy danych:
    ```
    npx prisma migrate dev
    ```
 
-5. Seed the database with initial data (roles, permissions, and admin user):
+5. Zainicjuj bazę danych z danymi początkowymi (role, uprawnienia i admin):
    ```
    npm run create-admin
    ```
 
-6. Start the development server:
+6. Uruchom serwer deweloperski:
    ```
    npm run dev
    ```
 
-### Frontend Setup
+### Konfiguracja frontendu
 
-1. Navigate to the frontend directory:
+1. Przejdź do katalogu frontendu:
    ```
-   cd frontend
+   cd frontend-vite
    ```
 
-2. Install dependencies:
+2. Zainstaluj zależności:
    ```
    npm install
    ```
 
-3. Create a `.env` file in the frontend directory:
+3. Uruchom serwer deweloperski:
    ```
-   REACT_APP_API_URL=http://localhost:3000/api
-   ```
-
-4. Start the development server:
-   ```
-   npm start
+   npm run dev
    ```
 
-5. Open your browser and navigate to `http://localhost:3000`
+4. Otwórz przeglądarkę i przejdź do `http://localhost:5173`
 
-## Default Admin Credentials
+## Domyślne dane logowania administratora
 
 - **Login**: admin
-- **Password**: admin123
+- **Hasło**: admin123
 
-**Important:** Change the default password after your first login for security reasons.
+**Ważne:** Zmień domyślne hasło po pierwszym logowaniu ze względów bezpieczeństwa.
 
-## Features
+## Główne funkcje systemu
 
-- **Authentication**: JWT-based authentication with access and refresh tokens
-- **User Management**: Create, update, and delete users
-- **Role-Based Access Control**: Define permissions for different user roles
-- **Dashboard**: Overview of production metrics with charts
-- **Modern UI**: Responsive design using Tailwind CSS
+### Zarządzanie użytkownikami i uprawnieniami
+- Kontrola dostępu oparta na rolach (RBAC)
+- Zarządzanie uprawnieniami dla różnych modułów
+- Śledzenie aktywności użytkowników
 
-## Technology Stack
+### Śledzenie czasu pracy
+- Rejestrowanie sesji pracy
+- Zarządzanie przerwami
+- Raportowanie czasu pracy
 
-- **Backend**:
-  - Node.js and Express
-  - Prisma ORM for database access
-  - PostgreSQL database
-  - JWT for authentication
-  - Socket.IO for real-time updates
+### Zarządzanie nieobecnościami
+- Różne typy nieobecności (płatne/niepłatne)
+- Obsługa wniosków urlopowych
+- Kalendarz nieobecności
 
-- **Frontend**:
-  - React for UI components
-  - React Router for navigation
-  - React Query for data fetching
-  - Tailwind CSS for styling
-  - Recharts for data visualization
+### Produkcja
+- Definiowanie przewodników produkcyjnych
+- Zarządzanie krokami produkcyjnymi
+- Przypisywanie zadań
+- Monitorowanie postępu produkcji
+- Wykresy i statystyki produkcyjne
 
-## Next Steps
+### Kontrola jakości
+- Szablony kontroli jakości
+- Inspekcje jakości z raportowaniem
+- Śledzenie problemów jakościowych
 
-1. Implement additional feature modules as specified in your requirements
-2. Create unit and integration tests
-3. Set up CI/CD pipeline for automated deployments
-4. Enhance security measures
-5. Add comprehensive documentation for API endpoints
+### Harmonogramowanie produkcji
+- Planowanie zadań produkcyjnych
+- Przydzielanie zasobów
+- Wizualizacja harmonogramu
+
+### Inwentaryzacja
+- Zarządzanie zapasami
+- Śledzenie zużycia materiałów
+- Transakcje magazynowe
+
+### Komunikacja
+- System wiadomości między użytkownikami
+- Powiadomienia w czasie rzeczywistym
+- Komentarze do zadań produkcyjnych
+
+### Dodatkowe funkcje
+- Rozpoznawanie tekstu (OCR)
+- Dziennik audytu dla zmian systemowych
+- Eksport danych do Excel/CSV
+
+## Technologie
+
+### Backend
+- Node.js i Express
+- Prisma ORM
+- PostgreSQL
+- JWT
+- Socket.IO
+- multer (obsługa plików)
+- tesseract.js (OCR)
+- bcrypt (haszowanie haseł)
+- node-cron (zadania cykliczne)
+
+### Frontend
+- React 19
+- React Router 7
+- React Query
+- Tailwind CSS
+- Recharts
+- Socket.IO Client
+- React Hook Form
+- React Toastify
+- DND Kit (drag and drop)
+- ExcelJS i XLSX (eksport danych)
+
+## Struktura projektu
+
+### Backend
+- `/controllers` - logika obsługi żądań HTTP
+- `/routes` - definicje tras API
+- `/middleware` - middleware Express
+- `/services` - logika biznesowa
+- `/utils` - funkcje pomocnicze
+- `/prisma` - definicja schematu bazy danych
+- `/sockets` - obsługa komunikacji Socket.IO
+- `/scripts` - skrypty pomocnicze
+
+### Frontend
+- `/src/pages` - komponenty stron
+- `/src/components` - komponenty wielokrotnego użytku
+- `/src/contexts` - konteksty React
+- `/src/api` - integracja z API
+- `/src/utils` - funkcje pomocnicze
+- `/src/services` - logika biznesowa
+- `/src/routes` - konfiguracja routingu
+- `/src/assets` - zasoby statyczne
+
+## Plany rozwoju
+
+Projekt jest w ciągłym rozwoju. Planowane ulepszenia:
+
+### Najbliższe plany
+- Poprawa interfejsu użytkownika
+- Dodanie nowych raportów
+- Rozbudowa systemu powiadomień
+- Optymalizacja wydajności
+
+### Dalsze plany
+- Integracja z systemami ERP
+- Rozbudowa modułu planowania
+- Dodanie mobilnej wersji
+- Rozszerzenie API

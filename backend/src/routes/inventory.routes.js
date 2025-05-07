@@ -71,8 +71,14 @@ router.post(
 
 router.post(
   '/items/:id/remove',
-  checkPermission('inventory', 'update', 1),
+  checkPermission('inventory', 'issue', 1),
   inventoryController.removeInventoryQuantity
+);
+
+router.post(
+  '/items/:id/adjust',
+  checkPermission('inventory', 'manage', 2),
+  inventoryController.adjustInventoryQuantity
 );
 
 router.get(
@@ -92,6 +98,12 @@ router.post(
   '/guides/:guideId/items',
   checkPermission('production', 'update', 1),
   inventoryController.addItemsToProductionGuide
+);
+
+router.get(
+  '/guides/:guideId/items',
+  checkPermission('production', 'read', 1),
+  inventoryController.getGuideInventoryItems
 );
 
 router.delete(

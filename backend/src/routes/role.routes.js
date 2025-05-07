@@ -1,6 +1,14 @@
 const express = require('express');
-const roleController = require('../controllers/role.controller');
 const { checkAuth, checkPermission } = require('../middleware/auth.middleware');
+const { 
+  getAllRoles, 
+  getRoleById, 
+  createRole, 
+  updateRole, 
+  deleteRole, 
+  getAllPermissions,
+  refreshPermissionsCache 
+} = require('../controllers/role.controller');
 
 const router = express.Router();
 
@@ -11,42 +19,49 @@ router.use(checkAuth);
 router.get(
   '/',
   checkPermission('roles', 'read', 1),
-  roleController.getAllRoles
+  getAllRoles
 );
 
 // Get all permissions - requires roles.read permission
 router.get(
   '/permissions',
   checkPermission('roles', 'read', 1),
-  roleController.getAllPermissions
+  getAllPermissions
+);
+
+// Manual refresh of permissions cache - requires higher roles.update permission
+router.post(
+  '/permissions/refresh',
+  checkPermission('roles', 'update', 2),
+  refreshPermissionsCache
 );
 
 // Get role by ID - requires roles.read permission
 router.get(
   '/:id',
   checkPermission('roles', 'read', 1),
-  roleController.getRoleById
+  getRoleById
 );
 
 // Create role - requires roles.create permission
 router.post(
   '/',
   checkPermission('roles', 'create', 1),
-  roleController.createRole
+  createRole
 );
 
 // Update role - requires roles.update permission
 router.put(
   '/:id',
   checkPermission('roles', 'update', 1),
-  roleController.updateRole
+  updateRole
 );
 
 // Delete role - requires roles.delete permission
 router.delete(
   '/:id',
-  checkPermission('roles', 'delete'), // Higher permission level for deletion
-  roleController.deleteRole
+  checkPermission('roles', 'delete', 1),
+  deleteRole
 );
 
 module.exports = router;

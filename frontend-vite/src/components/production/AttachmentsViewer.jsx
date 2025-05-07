@@ -45,8 +45,8 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
 
   // Format file size
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown size';
-    if (bytes < 1024) return bytes + ' bytes';
+    if (!bytes) return 'Nieznany rozmiar';
+    if (bytes < 1024) return bytes + ' bajtów';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
@@ -55,7 +55,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
   const deleteAttachmentMutation = useMutation({
     mutationFn: (attachmentId) => productionApi.deleteAttachment(attachmentId),
     onSuccess: () => {
-      toast.success('Attachment deleted successfully');
+      toast.success('Załącznik usunięty pomyślnie');
       // Invalidate queries based on entity type
       if (entityType === 'guide') {
         queryClient.invalidateQueries(['guide', entityId]);
@@ -64,7 +64,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
       }
     },
     onError: (error) => {
-      toast.error(`Error deleting attachment: ${error.message}`);
+      toast.error(`Błąd usuwania załącznika: ${error.message}`);
     }
   });
 
@@ -83,7 +83,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
       }
     },
     onSuccess: () => {
-      toast.success('Attachments uploaded successfully');
+      toast.success('Załączniki przesłane pomyślnie');
       setNewFiles([]);
       setIsUploading(false);
       // Invalidate queries based on entity type
@@ -94,7 +94,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
       }
     },
     onError: (error) => {
-      toast.error(`Error uploading attachments: ${error.message}`);
+      toast.error(`Błąd przesyłania załączników: ${error.message}`);
       setIsUploading(false);
     }
   });
@@ -104,7 +104,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
     e.preventDefault();
     
     if (newFiles.length === 0) {
-      toast.error('Please select files to upload');
+      toast.error('Proszę wybrać pliki do przesłania');
       return;
     }
 
@@ -120,7 +120,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
 
   // Handle attachment deletion
   const handleDeleteAttachment = (attachmentId) => {
-    if (window.confirm('Are you sure you want to delete this attachment?')) {
+    if (window.confirm('Czy na pewno chcesz usunąć ten załącznik?')) {
       deleteAttachmentMutation.mutate(attachmentId);
     }
   };
@@ -132,7 +132,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
 
   return (
     <div className="mt-6">
-      <h2 className="text-lg font-semibold mb-4">Attachments</h2>
+      <h2 className="text-lg font-semibold mb-4">Załączniki</h2>
       
       {attachments && attachments.length > 0 ? (
         <div className="bg-gray-50 p-4 rounded-lg mb-4">
@@ -173,7 +173,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
         </div>
       ) : (
         <div className="bg-gray-50 p-4 rounded-lg mb-4 text-center text-gray-500">
-          No attachments available
+          Brak dostępnych załączników
         </div>
       )}
 
@@ -182,7 +182,7 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
           <form onSubmit={handleUpload}>
             <div className="mb-3">
               <label htmlFor="files" className="block text-sm font-medium text-gray-700 mb-1">
-                Upload New Attachments
+                Prześlij nowe załączniki
               </label>
               <input
                 type="file"
@@ -195,10 +195,12 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
             
             {newFiles.length > 0 && (
               <div className="mb-3">
-                <p className="text-sm font-medium text-gray-700">Selected files:</p>
+                <p className="text-sm font-medium text-gray-700">Wybrane pliki:</p>
                 <ul className="mt-1 text-sm text-gray-500 list-disc pl-5">
                   {newFiles.map((file, index) => (
-                    <li key={index}>{file.name} ({formatFileSize(file.size)})</li>
+                    <li key={index}>
+                      {file.name} ({formatFileSize(file.size)})
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -207,9 +209,9 @@ const AttachmentsViewer = ({ attachments, entityType, entityId }) => {
             <button
               type="submit"
               disabled={isUploading || newFiles.length === 0}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300"
             >
-              {isUploading ? 'Uploading...' : 'Upload Files'}
+              {isUploading ? 'Przesyłanie...' : 'Prześlij załączniki'}
             </button>
           </form>
         </div>

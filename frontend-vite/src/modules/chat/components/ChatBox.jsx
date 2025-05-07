@@ -12,7 +12,7 @@ const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
 
 const ChatBox = ({ selectedUser }) => {
   const { user } = useAuth();
-  const { onlineUsers, messages, sendMessage, fetchMessagesForUser, deleteMessage } = useChat();
+  const { messages, sendMessage, fetchMessagesForUser, deleteMessage, markMessagesAsRead } = useChat();
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState(null);
@@ -87,6 +87,21 @@ const ChatBox = ({ selectedUser }) => {
     }
   }, [currentMessages.length, shouldScrollToBottom]);
 
+  // Oznaczamy wiadomości jako przeczytane, gdy są widoczne
+  useEffect(() => {
+    if (selectedUser?.id && currentMessages.length > 0) {
+      // Znajdujemy nieprzeczytane wiadomości od wybranego użytkownika
+      const hasUnreadMessages = currentMessages.some(
+        msg => msg.senderId === selectedUser.id && !msg.isRead
+      );
+      
+      // Jeśli są nieprzeczytane wiadomości, oznaczamy je jako przeczytane
+      if (hasUnreadMessages) {
+        markMessagesAsRead(selectedUser.id);
+      }
+    }
+  }, [currentMessages, selectedUser, markMessagesAsRead]);
+
   // Handle file selection
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -131,7 +146,7 @@ const ChatBox = ({ selectedUser }) => {
         formData.append('content', message);
         
         // Send the file and message content using the configured api service
-        const response = await api.post(`/chat/${selectedUser.id}/attachment`, formData, {
+        await api.post(`/chat/${selectedUser.id}/attachment`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data'
           }
@@ -281,7 +296,9 @@ const ChatBox = ({ selectedUser }) => {
                   msg.senderId === user?.id
                     ? 'ml-auto bg-indigo-100'
                     : 'mr-auto bg-gray-100',
-                  msg.isDeleted && 'opacity-70'
+                  msg.isDeleted && 'opacity-70',
+                  // Dodajemy pogrubienie dla nieprzeczytanych wiadomości
+                  msg.senderId !== user?.id && !msg.isRead && !msg.isDeleted && 'font-semibold border-l-4 border-indigo-500'
                 )}
                 onMouseEnter={() => msg.senderId === user?.id && setSelectedMessageId(msg.id)}
                 onMouseLeave={() => setSelectedMessageId(null)}
@@ -323,9 +340,18 @@ const ChatBox = ({ selectedUser }) => {
                   </button>
                 )}
                 
-                {/* Czas wysłania wiadomości */}
-                <div className="text-[10px] text-gray-500 mt-1 text-right">
-                  {new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                <div className="flex items-center justify-end mt-1 space-x-2">
+                  {/* Status odczytania - tylko dla własnych wiadomości */}
+                  {msg.senderId === user?.id && !msg.isDeleted && (
+                    <span className="text-[10px] text-gray-500" title={msg.isRead ? "Odczytano" : "Wysłano"}>
+                      {msg.isRead ? "✓✓" : "✓"}
+                    </span>
+                  )}
+                  
+                  {/* Czas wysłania wiadomości */}
+                  <div className="text-[10px] text-gray-500 text-right">
+                    {new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </div>
                 </div>
               </div>
             ))}

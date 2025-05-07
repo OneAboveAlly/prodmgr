@@ -1,10 +1,11 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
+const axios = require('axios');
 
 const prisma = new PrismaClient();
 
 const DEFAULT_ADMIN = {
-  firstName: 'Admin',
+  firstName: 'SuperAdmin',
   lastName: 'User',
   login: 'admin',
   email: 'admin@example.com',
@@ -28,137 +29,111 @@ const roles = [
   }
 ];
 
-// Define permissions by module
+// Comprehensive list of all permissions from all scripts
 const permissions = [
   // User management permissions
-  { module: 'users', action: 'read', description: 'View users' },
-  { module: 'users', action: 'create', description: 'Create users' },
-  { module: 'users', action: 'update', description: 'Update users' },
-  { module: 'users', action: 'delete', description: 'Delete users' },
+  { module: 'users', action: 'read', description: 'Podgląd użytkowników' },
+  { module: 'users', action: 'create', description: 'Tworzenie użytkowników' },
+  { module: 'users', action: 'update', description: 'Aktualizacja użytkowników' },
+  { module: 'users', action: 'delete', description: 'Usuwanie użytkowników' },
   
   // Role management permissions
-  { module: 'roles', action: 'read', description: 'View roles' },
-  { module: 'roles', action: 'create', description: 'Create roles' },
-  { module: 'roles', action: 'update', description: 'Update roles' },
-  { module: 'roles', action: 'delete', description: 'Delete roles' },
+  { module: 'roles', action: 'read', description: 'Podgląd ról' },
+  { module: 'roles', action: 'create', description: 'Tworzenie ról' },
+  { module: 'roles', action: 'update', description: 'Aktualizacja ról' },
+  { module: 'roles', action: 'delete', description: 'Usuwanie ról' },
   
   // Permission management
-  { module: 'permissions', action: 'read', description: 'View permissions' },
-  { module: 'permissions', action: 'assign', description: 'Assign permissions' },
+  { module: 'permissions', action: 'read', description: 'Podgląd uprawnień' },
+  { module: 'permissions', action: 'assign', description: 'Przydzielanie uprawnień' },
   
   // Time tracking permissions
-  { module: 'timeTracking', action: 'read', description: 'View time tracking' },
-  { module: 'timeTracking', action: 'create', description: 'Create time tracking sessions' },
-  { module: 'timeTracking', action: 'update', description: 'Update time tracking sessions' },
-  { module: 'timeTracking', action: 'delete', description: 'Delete time tracking sessions' },
-  { module: 'timeTracking', action: 'manageSettings', description: 'Manage time tracking settings' },
-  { module: 'timeTracking', action: 'viewReports', description: 'View time tracking reports' },
-  { module: 'timeTracking', action: 'exportReports', description: 'Export time tracking reports' },
-  { module: 'timeTracking', action: 'viewAll', description: 'View all users time tracking' },
+  { module: 'timeTracking', action: 'read', description: 'Podgląd śledzenia czasu' },
+  { module: 'timeTracking', action: 'create', description: 'Tworzenie sesji śledzenia czasu' },
+  { module: 'timeTracking', action: 'update', description: 'Aktualizacja sesji śledzenia czasu' },
+  { module: 'timeTracking', action: 'delete', description: 'Usuwanie sesji śledzenia czasu' },
+  { module: 'timeTracking', action: 'manageSettings', description: 'Zarządzanie ustawieniami śledzenia czasu' },
+  { module: 'timeTracking', action: 'viewReports', description: 'Podgląd raportów śledzenia czasu' },
+  { module: 'timeTracking', action: 'exportReports', description: 'Eksportowanie raportów śledzenia czasu' },
+  { module: 'timeTracking', action: 'viewAll', description: 'Podgląd śledzenia czasu wszystkich użytkowników' },
   
   // Leave management permissions
-  { module: 'leave', action: 'read', description: 'View leave requests' },
-  { module: 'leave', action: 'create', description: 'Create leave requests' },
-  { module: 'leave', action: 'update', description: 'Update leave requests' },
-  { module: 'leave', action: 'delete', description: 'Delete leave requests' },
-  { module: 'leave', action: 'approve', description: 'Approve or reject leave requests' },
-  { module: 'leave', action: 'manageTypes', description: 'Manage leave types' },
-  { module: 'leave', action: 'viewAll', description: 'View all users leave requests' },
+  { module: 'leave', action: 'read', description: 'Podgląd wniosków urlopowych' },
+  { module: 'leave', action: 'create', description: 'Tworzenie wniosków urlopowych' },
+  { module: 'leave', action: 'update', description: 'Aktualizacja wniosków urlopowych' },
+  { module: 'leave', action: 'delete', description: 'Usuwanie wniosków urlopowych' },
+  { module: 'leave', action: 'approve', description: 'Zatwierdzanie lub odrzucanie wniosków urlopowych' },
+  { module: 'leave', action: 'manageTypes', description: 'Zarządzanie typami urlopów' },
+  { module: 'leave', action: 'viewAll', description: 'Podgląd wniosków urlopowych wszystkich użytkowników' },
   
-  // To be extended with more modules as your application grows
+  // Inventory permissions
+  { module: 'inventory', action: 'create', description: 'Tworzenie nowych pozycji magazynowych' },
+  { module: 'inventory', action: 'read', description: 'Podgląd magazynu i stanów magazynowych' },
+  { module: 'inventory', action: 'update', description: 'Aktualizacja pozycji magazynowych' },
+  { module: 'inventory', action: 'delete', description: 'Usuwanie pozycji magazynowych' },
+  { module: 'inventory', action: 'reserve', description: 'Rezerwowanie przedmiotów magazynowych' },
+  { module: 'inventory', action: 'issue', description: 'Wydawanie przedmiotów z magazynu' },
+  { module: 'inventory', action: 'manage', description: 'Zarządzanie zarezerwowanymi przedmiotami i poziomami magazynowymi' },
+  
+  // Production permissions
+  { module: 'production', action: 'create', description: 'Tworzenie nowych przewodników produkcyjnych' },
+  { module: 'production', action: 'read', description: 'Podgląd przewodników produkcyjnych' },
+  { module: 'production', action: 'update', description: 'Aktualizacja przewodników produkcyjnych' },
+  { module: 'production', action: 'delete', description: 'Usuwanie przewodników produkcyjnych' },
+  { module: 'production', action: 'archive', description: 'Archiwizacja przewodników produkcyjnych' },
+  { module: 'production', action: 'assign', description: 'Przypisywanie użytkowników do przewodników' },
+  { module: 'production', action: 'work', description: 'Praca nad przewodnikami (rejestrowanie czasu)' },
+  { module: 'production', action: 'manage', description: 'Zmiana statusów, zarządzanie priorytetami' },
+  { module: 'production', action: 'manageAll', description: 'Zaawansowane zarządzanie produkcją i przewodnikami' },
+  { module: 'production', action: 'manualWork', description: 'Dodawanie ręcznych wpisów pracy, datowanie wsteczne' },
+  { module: 'production', action: 'view', description: 'Podgląd przewodników produkcyjnych' },
+  
+  // Audit logs permissions
+  { module: 'auditLogs', action: 'read', description: 'Przeglądanie dziennika audytu' },
+  { module: 'auditLogs', action: 'export', description: 'Eksportowanie dziennika audytu' },
+  
+  // Quality control permissions
+  { module: 'quality', action: 'create', description: 'Tworzenie szablonów kontroli jakości i przeprowadzanie kontroli' },
+  { module: 'quality', action: 'read', description: 'Podgląd szablonów kontroli jakości i wyników' },
+  { module: 'quality', action: 'update', description: 'Aktualizacja szablonów kontroli jakości' },
+  { module: 'quality', action: 'delete', description: 'Usuwanie szablonów kontroli jakości' },
+  
+  // OCR permissions
+  { module: 'ocr', action: 'create', description: 'Tworzenie nowych skanów OCR' },
+  { module: 'ocr', action: 'read', description: 'Przeglądanie wyników OCR' },
+  { module: 'ocr', action: 'update', description: 'Edycja wyników OCR' },
+  { module: 'ocr', action: 'delete', description: 'Usuwanie skanów OCR' },
+  { module: 'ocr', action: 'process', description: 'Przetwarzanie obrazów za pomocą OCR' },
+  { module: 'ocr', action: 'manage', description: 'Zarządzanie wynikami OCR' },
+  
+  // Dashboard permissions
+  { module: 'dashboard', action: 'read', description: 'Podgląd panelu produkcji i analityki' },
+  
+  // Scheduling permissions
+  { module: 'scheduling', action: 'create', description: 'Tworzenie harmonogramów produkcji i przydziałów' },
+  { module: 'scheduling', action: 'read', description: 'Podgląd harmonogramów produkcji' },
+  { module: 'scheduling', action: 'update', description: 'Aktualizacja harmonogramów produkcji i przydziałów' },
+  { module: 'scheduling', action: 'delete', description: 'Usuwanie harmonogramów produkcji i przydziałów' },
+  
+  // Statistics permissions
+  { module: 'statistics', action: 'read', description: 'Podgląd podstawowych statystyk' },
+  { module: 'statistics', action: 'viewReports', description: 'Podgląd szczegółowych raportów i analiz' },
+  { module: 'statistics', action: 'export', description: 'Eksportowanie statystyk i raportów' },
+  
+  // Chat permissions
+  { module: 'chat', action: 'view', description: 'Dostęp do funkcji czatu' },
+  { module: 'chat', action: 'send', description: 'Wysyłanie wiadomości' },
+  { module: 'chat', action: 'delete', description: 'Usuwanie własnych wiadomości' },
+  { module: 'chat', action: 'admin', description: 'Administrowanie wszystkimi wiadomościami czatu' },
+  
+  // Admin special permissions 
+  { module: 'admin', action: 'access', description: 'Specjalne uprawnienie dostępu administratora' },
+  { module: '*', action: '*', description: 'Uprawnienie ogólne - pełny dostęp do wszystkiego' }
 ];
-
-// Role permission mappings (what permissions each role has)
-const rolePermissions = {
-  'Admin': { 
-    // Admin has all permissions with max value
-    'users.read': 3, 
-    'users.create': 3,
-    'users.update': 3,
-    'users.delete': 3,
-    'roles.read': 3,
-    'roles.create': 3,
-    'roles.update': 3,
-    'roles.delete': 3,
-    'permissions.read': 3,
-    'permissions.assign': 3,
-    'timeTracking.read': 3,
-    'timeTracking.create': 3,
-    'timeTracking.update': 3,
-    'timeTracking.delete': 3,
-    'timeTracking.manageSettings': 3,
-    'timeTracking.viewReports': 3,
-    'timeTracking.exportReports': 3,
-    'timeTracking.viewAll': 3,
-    'leave.read': 3,
-    'leave.create': 3,
-    'leave.update': 3,
-    'leave.delete': 3,
-    'leave.approve': 3,
-    'leave.manageTypes': 3,
-    'leave.viewAll': 3
-  },
-  'Manager': {
-    // Manager has most permissions with medium value
-    'users.read': 2,
-    'users.create': 2,
-    'users.update': 2,
-    'users.delete': 0, // Managers cannot delete users
-    'roles.read': 2,
-    'roles.create': 0,
-    'roles.update': 0,
-    'roles.delete': 0,
-    'permissions.read': 2,
-    'permissions.assign': 0,
-    'timeTracking.read': 2,
-    'timeTracking.create': 2,
-    'timeTracking.update': 2,
-    'timeTracking.delete': 0,
-    'timeTracking.manageSettings': 1,
-    'timeTracking.viewReports': 2,
-    'timeTracking.exportReports': 2,
-    'timeTracking.viewAll': 2,
-    'leave.read': 2,
-    'leave.create': 2,
-    'leave.update': 2,
-    'leave.delete': 0,
-    'leave.approve': 2,
-    'leave.manageTypes': 0,
-    'leave.viewAll': 2
-  },
-  'User': {
-    // Regular user has limited permissions
-    'users.read': 1,
-    'users.create': 0,
-    'users.update': 0,
-    'users.delete': 0,
-    'roles.read': 1,
-    'roles.create': 0,
-    'roles.update': 0,
-    'roles.delete': 0,
-    'permissions.read': 0,
-    'permissions.assign': 0,
-    'timeTracking.read': 1,
-    'timeTracking.create': 1,
-    'timeTracking.update': 1,
-    'timeTracking.delete': 0,
-    'timeTracking.manageSettings': 0,
-    'timeTracking.viewReports': 1,
-    'timeTracking.exportReports': 0,
-    'timeTracking.viewAll': 0,
-    'leave.read': 1,
-    'leave.create': 1,
-    'leave.update': 1,
-    'leave.delete': 0,
-    'leave.approve': 0,
-    'leave.manageTypes': 0,
-    'leave.viewAll': 0
-  }
-};
 
 async function main() {
   try {
-    console.log('Starting database seeding...');
+    console.log('Starting comprehensive database seeding...');
     
     // Create roles
     console.log('Creating roles...');
@@ -205,30 +180,20 @@ async function main() {
       }
     }
     
-    // Assign permissions to roles
+    // Assign all permissions to all roles with maximum level (3) for Admin
     console.log('Assigning permissions to roles...');
     
-    for (const [roleName, permissions] of Object.entries(rolePermissions)) {
-      const role = createdRoles[roleName];
-      
-      if (!role) {
-        console.log(`Role not found: ${roleName}`);
-        continue;
-      }
-      
-      for (const [permKey, value] of Object.entries(permissions)) {
-        const [module, action] = permKey.split('.');
-        const permission = createdPermissions[permKey];
-        
-        if (!permission) {
-          console.log(`Permission not found: ${permKey}`);
-          continue;
-        }
-        
+    // Get all permissions from the database (including any pre-existing ones)
+    const allPermissionsFromDB = await prisma.permission.findMany();
+    
+    // Assign to Admin role
+    const adminRole = createdRoles['Admin'];
+    if (adminRole) {
+      for (const permission of allPermissionsFromDB) {
         // Check if role permission already exists
         const existingRolePermission = await prisma.rolePermission.findFirst({
           where: {
-            roleId: role.id,
+            roleId: adminRole.id,
             permissionId: permission.id
           }
         });
@@ -236,14 +201,84 @@ async function main() {
         if (!existingRolePermission) {
           await prisma.rolePermission.create({
             data: {
-              roleId: role.id,
+              roleId: adminRole.id,
               permissionId: permission.id,
-              value
+              value: 3  // Maximum level
             }
           });
-          console.log(`Assigned permission ${permKey} to role ${roleName} with value ${value}`);
+          console.log(`Assigned permission ${permission.module}.${permission.action} to role Admin with maximum value 3`);
         } else {
-          console.log(`Permission ${permKey} already assigned to role ${roleName}`);
+          // Update existing permission to maximum level
+          await prisma.rolePermission.update({
+            where: {
+              id: existingRolePermission.id
+            },
+            data: {
+              value: 3  // Maximum level
+            }
+          });
+          console.log(`Updated permission ${permission.module}.${permission.action} for Admin role to maximum value 3`);
+        }
+      }
+    }
+    
+    // Assign to Manager role (level 2)
+    const managerRole = createdRoles['Manager'];
+    if (managerRole) {
+      for (const permission of allPermissionsFromDB) {
+        const existingRolePermission = await prisma.rolePermission.findFirst({
+          where: {
+            roleId: managerRole.id,
+            permissionId: permission.id
+          }
+        });
+        
+        if (!existingRolePermission) {
+          await prisma.rolePermission.create({
+            data: {
+              roleId: managerRole.id,
+              permissionId: permission.id,
+              value: 2  // Medium level
+            }
+          });
+          console.log(`Assigned permission ${permission.module}.${permission.action} to role Manager with value 2`);
+        } else {
+          // Ensure manager has at least level 2 for all permissions
+          if (existingRolePermission.value < 2) {
+            await prisma.rolePermission.update({
+              where: {
+                id: existingRolePermission.id
+              },
+              data: {
+                value: 2
+              }
+            });
+            console.log(`Updated permission ${permission.module}.${permission.action} for Manager role to value 2`);
+          }
+        }
+      }
+    }
+    
+    // Assign to User role (level 1)
+    const userRole = createdRoles['User'];
+    if (userRole) {
+      for (const permission of allPermissionsFromDB) {
+        const existingRolePermission = await prisma.rolePermission.findFirst({
+          where: {
+            roleId: userRole.id,
+            permissionId: permission.id
+          }
+        });
+        
+        if (!existingRolePermission) {
+          await prisma.rolePermission.create({
+            data: {
+              roleId: userRole.id,
+              permissionId: permission.id,
+              value: 1  // Basic level
+            }
+          });
+          console.log(`Assigned permission ${permission.module}.${permission.action} to role User with value 1`);
         }
       }
     }
@@ -296,6 +331,16 @@ async function main() {
     }
     
     console.log('Database seeding completed successfully!');
+    
+    // Try to refresh permissions cache if server is running
+    try {
+      console.log('Attempting to refresh permissions cache...');
+      await axios.post('http://localhost:5000/api/roles/permissions/refresh', {});
+      console.log('✅ Permissions cache refreshed successfully');
+    } catch (e) {
+      console.log('⚠️ Server not running or endpoint not available - permissions will be refreshed on next server start');
+    }
+    
   } catch (error) {
     console.error('Error during database seeding:', error);
     process.exit(1);

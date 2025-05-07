@@ -82,6 +82,25 @@ function setupChatSocket(io) {
       }
     });
 
+    // Obsługa odczytu wiadomości
+    socket.on('message:read', async (data) => {
+      const { senderId, receiverId } = data;
+      
+      try {
+        // Znajdź socket odbiorcy
+        const receiverSocketId = onlineUsers.get(receiverId);
+        
+        if (receiverSocketId) {
+          io.to(`user:${receiverId}`).emit('message:read', { 
+            senderId, 
+            receiverId 
+          });
+        }
+      } catch (error) {
+        console.error('❌ Błąd podczas obsługi odczytu wiadomości:', error);
+      }
+    });
+
     socket.on('chat:getOnlineUsers', () => {
       socket.emit('chat:onlineUsers', Array.from(onlineUsers.keys()));
     });

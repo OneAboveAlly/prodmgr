@@ -14,7 +14,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.5.0",
+    "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

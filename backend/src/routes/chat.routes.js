@@ -17,4 +17,6 @@ router.delete('/:messageId', chatController.deleteMessage);
 // Endpoint do wysyłania wiadomości z załącznikami
 router.post('/:userId/attachment', uploadAttachment.single('file'), chatController.sendMessageWithAttachment);
 
+router.post('/:userId/read', chatController.markAsRead);
+
 module.exports = router;

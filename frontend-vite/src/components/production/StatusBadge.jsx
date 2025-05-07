@@ -16,12 +16,25 @@ const StatusBadge = ({ status }) => {
     }
   };
 
-  // Format status for display (replace underscores with spaces)
-  const formattedStatus = status ? status.replace('_', ' ') : '';
+  // Tłumaczenia statusów na polski
+  const getStatusTranslation = (status) => {
+    switch (status) {
+      case 'DRAFT':
+        return 'Szkic';
+      case 'IN_PROGRESS':
+        return 'W trakcie';
+      case 'COMPLETED':
+        return 'Zakończony';
+      case 'CANCELLED':
+        return 'Anulowany';
+      default:
+        return status ? status.replace('_', ' ') : '';
+    }
+  };
 
   return (
     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(status)}`}>
-      {formattedStatus}
+      {getStatusTranslation(status)}
     </span>
   );
 };

@@ -32,7 +32,27 @@ const inventoryApi = {
   },
 
   addQuantity: (id, payload) => api.post(`/inventory/items/${id}/add`, payload).then(res => res.data),
+  
+  /**
+   * Pobiera ilość z magazynu
+   * @param {string} id - ID przedmiotu
+   * @param {Object} payload - Dane do wysłania
+   * @param {number} payload.quantity - Ilość do pobrania
+   * @param {string} payload.reason - Powód pobrania (opcjonalnie)
+   * @param {boolean} payload.removeReserved - Czy pobierać z zarezerwowanych (opcjonalnie)
+   * @returns {Promise} - Promise z danymi odpowiedzi
+   */
   removeQuantity: (id, payload) => api.post(`/inventory/items/${id}/remove`, payload).then(res => res.data),
+  
+  /**
+   * Koryguje ilość przedmiotu w magazynie
+   * @param {string} id - ID przedmiotu
+   * @param {Object} payload - Dane do wysłania
+   * @param {number} payload.quantity - Nowa ilość przedmiotu
+   * @param {string} payload.reason - Powód korekty (opcjonalnie)
+   * @returns {Promise} - Promise z danymi odpowiedzi
+   */
+  adjustQuantity: (id, payload) => api.post(`/inventory/items/${id}/adjust`, payload).then(res => res.data),
 
   deleteItem: (id) => api.delete(`/inventory/items/${id}`).then(res => res.data),
 
@@ -42,16 +62,38 @@ const inventoryApi = {
 
   getAllInventoryTransactions: (filters = {}) => {
     const params = new URLSearchParams();
+    
+    // Upewnij się, że dodajemy wszystkie parametry, włącznie z paginacją
     for (const key in filters) {
       if (filters[key] !== undefined && filters[key] !== '') {
         params.append(key, filters[key]);
       }
     }
+    
+    // Upewnij się, że mamy page i limit
+    if (!params.has('page') && filters.page) {
+      params.append('page', filters.page);
+    }
+    
+    if (!params.has('limit') && filters.limit) {
+      params.append('limit', filters.limit);
+    }
+    
+    console.log('API call params:', filters);
+    console.log('Final URL params:', params.toString());
+    
     return api.get(`/inventory/transactions/all?${params.toString()}`)
-      .then(res => ({ 
-        transactions: res.data.transactions || [], 
-        pagination: res.data.pagination || { page: 1, pages: 1 },
-      }));
+      .then(res => {
+        console.log('API raw response:', res);
+        return { 
+          transactions: res.data.transactions || [], 
+          pagination: res.data.pagination || { page: 1, pages: 1 },
+        };
+      })
+      .catch(err => {
+        console.error('API error:', err);
+        throw err;
+      });
   },
 
   updateInventoryItem: (id, data) => api.put(`/inventory/items/${id}`, data).then(res => res.data),

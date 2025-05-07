@@ -19,7 +19,10 @@ router.post('/send', notificationController.sendManualNotification);
 router.post('/test/:userId', notificationController.testNotification);
 router.post('/schedule', notificationController.scheduleNotification);
 
-// 🔥 Na końcu — dynamiczne trasy
+router.post('/production/guide-completed', notificationController.notifyGuideCompleted);
+router.post('/production/step-completed', notificationController.notifyStepCompleted);
+router.post('/production/guide-assigned', notificationController.notifyGuideAssigned);
+
 router.get('/:id', notificationController.getNotificationById);
 router.put('/:id', notificationController.updateNotification);
 router.delete('/:id', notificationController.deleteNotification);

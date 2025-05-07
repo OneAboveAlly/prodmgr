@@ -558,7 +558,8 @@ const getAllActiveSessions = async (req, res) => {
     // Build the base query
     const query = {
       where: {
-        status: 'active'
+        status: 'active',
+        endTime: null,
       },
       include: {
         user: {

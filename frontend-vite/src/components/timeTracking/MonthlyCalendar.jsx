@@ -3,7 +3,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import timeTrackingApi from '../../api/timeTracking.api';
 
-// Helper function to format seconds as hours and minutes
+// Funkcja pomocnicza do formatowania sekund jako godziny i minuty
 const formatDuration = (seconds) => {
   if (!seconds) return '0h 0m';
   const hours = Math.floor(seconds / 3600);
@@ -14,15 +14,15 @@ const formatDuration = (seconds) => {
 const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
   const currentDate = selectedMonth || new Date();
   const year = currentDate.getFullYear();
-  const month = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
+  const month = currentDate.getMonth() + 1; // Miesiące w JavaScript są indeksowane od 0
   
-  // Fetch daily summaries for the selected month
+  // Pobieranie dziennych podsumowań dla wybranego miesiąca
   const { data: dailySummaries, isLoading } = useQuery({
     queryKey: ['dailySummaries', year, month],
     queryFn: () => timeTrackingApi.getDailySummaries(year, month).then(res => res.data),
   });
   
-  // Create a map of dates to their summary data for quick lookup
+  // Tworzenie mapy dat do ich danych podsumowujących dla szybkiego wyszukiwania
   const summariesByDate = {};
   if (dailySummaries) {
     dailySummaries.forEach(summary => {
@@ -30,35 +30,35 @@ const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
     });
   }
   
-  // Generate calendar data
+  // Generowanie danych kalendarza
   const daysInMonth = new Date(year, month, 0).getDate();
-  const firstDayOfMonth = new Date(year, month - 1, 1).getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const firstDayOfMonth = new Date(year, month - 1, 1).getDay(); // 0 = Niedziela, 1 = Poniedziałek, itd.
   
-  // Navigate to previous month
+  // Przejście do poprzedniego miesiąca
   const goToPreviousMonth = () => {
-    const newDate = new Date(year, month - 2, 1); // month is 1-indexed here
+    const newDate = new Date(year, month - 2, 1); // miesiąc jest indeksowany od 1
     onMonthChange(newDate);
   };
   
-  // Navigate to next month
+  // Przejście do następnego miesiąca
   const goToNextMonth = () => {
-    const newDate = new Date(year, month, 1); // month is 1-indexed here
+    const newDate = new Date(year, month, 1); // miesiąc jest indeksowany od 1
     onMonthChange(newDate);
   };
   
-  // Get month name
-  const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
+  // Pobierz nazwę miesiąca
+  const monthName = new Date(year, month - 1, 1).toLocaleString('pl-PL', { month: 'long' });
   
-  // Generate calendar days
+  // Generowanie dni kalendarza
   const calendarDays = [];
   const today = new Date().toISOString().split('T')[0];
   
-  // Add empty cells for days before the first day of the month
+  // Dodaj puste komórki dla dni przed pierwszym dniem miesiąca
   for (let i = 0; i < firstDayOfMonth; i++) {
     calendarDays.push(<div key={`empty-${i}`} className="h-24 bg-gray-50 border border-gray-200"></div>);
   }
   
-  // Add cells for each day of the month
+  // Dodaj komórki dla każdego dnia miesiąca
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
     const summary = summariesByDate[date];
@@ -88,25 +88,26 @@ const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
             className="mt-1 truncate text-xs px-1 py-0.5 rounded"
             style={{ backgroundColor: `${leave.color}20`, color: leave.color }}
           >
-            {leave.halfDay ? 'Half Day' : ''} {leave.type}
+            {leave.halfDay ? 'Pół dnia' : ''} {leave.type}
           </div>
         ))}
         
         {summary?.sessionCount > 0 && (
           <div className="mt-1 text-xs text-gray-600">
-            {summary.sessionCount} session{summary.sessionCount !== 1 ? 's' : ''}
+            {summary.sessionCount} {summary.sessionCount === 1 ? 'sesja' : 
+                                   summary.sessionCount < 5 ? 'sesje' : 'sesji'}
           </div>
         )}
       </div>
     );
   }
   
-  // Weekday names
-  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Nazwy dni tygodnia
+  const weekdays = ['Ndz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
   
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      {/* Calendar header */}
+      {/* Nagłówek kalendarza */}
       <div className="p-4 bg-indigo-600 text-white flex justify-between items-center">
         <button
           onClick={goToPreviousMonth}
@@ -131,7 +132,7 @@ const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
         </button>
       </div>
       
-      {/* Days of week header */}
+      {/* Nagłówek z dniami tygodnia */}
       <div className="grid grid-cols-7 bg-gray-100">
         {weekdays.map(day => (
           <div key={day} className="p-2 text-center font-medium text-gray-500">
@@ -140,28 +141,28 @@ const MonthlyCalendar = ({ selectedMonth, onMonthChange }) => {
         ))}
       </div>
       
-      {/* Calendar body */}
+      {/* Ciało kalendarza */}
       {isLoading ? (
-        <div className="p-8 text-center">Loading calendar data...</div>
+        <div className="p-8 text-center">Ładowanie danych kalendarza...</div>
       ) : (
         <div className="grid grid-cols-7">
           {calendarDays}
         </div>
       )}
       
-      {/* Legend */}
+      {/* Legenda */}
       <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3 text-xs">
         <div className="flex items-center">
           <div className="h-3 w-3 bg-blue-50 border border-blue-300 mr-1"></div>
-          <span>Today</span>
+          <span>Dziś</span>
         </div>
         <div className="flex items-center">
           <div className="h-3 w-3 bg-green-100 mr-1"></div>
-          <span>Work time</span>
+          <span>Czas pracy</span>
         </div>
         <div className="flex items-center">
           <div className="h-3 w-3 bg-yellow-100 mr-1"></div>
-          <span>Leave</span>
+          <span>Urlop</span>
         </div>
       </div>
     </div>

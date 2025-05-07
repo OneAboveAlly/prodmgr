@@ -9,7 +9,7 @@ function generateBarcode() {
   return `MAG-${randomPart}`;
 }
 
-export default function CreateItemModal({ onClose }) {
+export default function CreateItemModal({ onClose, onSuccess }) {
   const { hasPermission } = useAuth();
   const canCreate = hasPermission('inventory', 'create');
   const canEditPrice = hasPermission('inventory', 'manage', 1);
@@ -26,6 +26,8 @@ export default function CreateItemModal({ onClose }) {
     minQuantity: ''
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -33,24 +35,29 @@ export default function CreateItemModal({ onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!canCreate) return toast.error('🚫 Brak uprawnień do tworzenia przedmiotów');
-
+    setIsSubmitting(true);
+    
     try {
-      const payload = {
-        ...form,
-        price: form.price !== '' ? parseFloat(form.price) : null,
-        minQuantity: form.minQuantity !== '' ? parseFloat(form.minQuantity) : null
-      };
-      await inventoryApi.createInventoryItem(payload);
-      toast.success('✅ Przedmiot dodany!');
+      const newItem = await inventoryApi.createInventoryItem({
+        name: form.name,
+        barcode: form.barcode,
+        quantity: Number(form.quantity),
+        unit: form.unit,
+        minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
+        location: form.location || null,
+        category: form.category || null,
+        price: form.price ? Number(form.price) : null,
+        description: form.description || null
+      });
+      
+      toast.success('✅ Przedmiot został dodany do magazynu');
       onClose();
+      if (onSuccess) onSuccess(newItem);
     } catch (err) {
-      console.error(err);
-      if (err.response?.status === 500) {
-        toast.error('❌ Taki kod kreskowy już istnieje!');
-      } else {
-        toast.error('❌ Nie udało się dodać przedmiotu.');
-      }
+      console.error('❌ Błąd dodawania przedmiotu:', err);
+      toast.error(`Nie udało się dodać przedmiotu: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -107,7 +114,7 @@ export default function CreateItemModal({ onClose }) {
 
           <div className="flex justify-end gap-2 mt-4">
             <button type="button" onClick={onClose} className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300">Anuluj</button>
-            <button type="submit" className="px-4 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">Zapisz</button>
+            <button type="submit" className="px-4 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" disabled={isSubmitting}>Zapisz</button>
           </div>
         </form>
       </div>

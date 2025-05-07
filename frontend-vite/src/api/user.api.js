@@ -1,62 +1,77 @@
 import api from '../services/api.service';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const BASE_URL = `${API_URL}/users`;
-
 const userApi = {
   getAll: async (page = 1, limit = 10) => {
     try {
-      const response = await api.get(`${BASE_URL}?page=${page}&limit=${limit}`);
+      const response = await api.get('/users', { 
+        params: { page, limit } 
+      });
       return response.data;
     } catch (error) {
-      console.error('Error fetching users:', error.response?.status || error.message);
+      console.error('Error fetching users:', error);
       throw error;
     }
   },
-
   getById: async (id) => {
     try {
-      const response = await api.get(`${BASE_URL}/${id}`);
+      const response = await api.get(`/users/${id}`);
       return response.data;
     } catch (error) {
-      console.error(`Error fetching user ${id}:`, error.response?.status || error.message);
+      console.error(`Error fetching user ${id}:`, error);
       throw error;
     }
   },
-  
   create: async (userData) => {
     try {
-      const response = await api.post(BASE_URL, userData);
+      const response = await api.post('/users', userData);
       return response.data;
     } catch (error) {
-      console.error('Error creating user:', error.response?.status || error.message);
+      console.error('Error creating user:', error);
       throw error;
     }
   },
-  
   update: async (id, userData) => {
     try {
-      const response = await api.put(`${BASE_URL}/${id}`, userData);
+      const response = await api.put(`/users/${id}`, userData);
       return response.data;
     } catch (error) {
-      console.error(`Error updating user ${id}:`, error.response?.status || error.message);
+      console.error(`Error updating user ${id}:`, error);
+      throw error;
+    }
+  },
+  delete: async (id) => {
+    try {
+      const response = await api.delete(`/users/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error deleting user ${id}:`, error);
       throw error;
     }
   },
   
-  delete: async (id) => {
+  // Metody do zarządzania własnym profilem
+  updateMyProfile: async (userData) => {
     try {
-      const response = await api.delete(`${BASE_URL}/${id}`);
+      const response = await api.put('/users/profile', userData);
       return response.data;
     } catch (error) {
-      console.error(`Error deleting user ${id}:`, error.response?.status || error.message);
+      console.error('Error updating profile:', error);
+      throw error;
+    }
+  },
+  changePassword: async (data) => {
+    try {
+      const response = await api.put('/users/password', data);
+      return response.data;
+    } catch (error) {
+      console.error('Error changing password:', error);
       throw error;
     }
   },
 
   getUsersByRole: async (roleName) => {
     try {
-      const response = await api.get(`${BASE_URL}/role/${roleName}`);
+      const response = await api.get(`/users/role/${roleName}`);
       return response.data;
     } catch (error) {
       console.error(`Error fetching users with role ${roleName}:`, error.response?.status || error.message);
@@ -66,16 +81,21 @@ const userApi = {
 
   // New methods
   fetchAllUsers: async () => {
-    const res = await fetch('/api/users');
-    return res.json();
+    try {
+      const response = await api.get('/users');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching all users:', error.response?.status || error.message);
+      throw error;
+    }
   },
 
   assignUserToGuide: async (guideId, userId) => {
-    return fetch(`/api/guides/${guideId}/assign/${userId}`, { method: 'POST' });
+    return api.post(`/guides/${guideId}/assign/${userId}`);
   },
 
   unassignUserFromGuide: async (guideId, userId) => {
-    return fetch(`/api/guides/${guideId}/unassign/${userId}`, { method: 'DELETE' });
+    return api.delete(`/guides/${guideId}/unassign/${userId}`);
   }
 };
 

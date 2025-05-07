@@ -1,23 +1,58 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Eye, EyeOff, Search, UserCheck, UserX } from 'lucide-react';
+import { Eye, EyeOff, Search, UserCheck, UserX, Circle } from 'lucide-react';
 
-const UserListSidebar = ({ onSelectUser }) => {
+const UserListSidebar = ({ onSelectUser, selectedUser }) => {
   const { user } = useAuth();
   const { users, onlineUsers, loading, messages, lastMessagesLoaded, hideMyOnlineStatus, toggleMyVisibility } = useChat();
   const [hideOnlineStatus, setHideOnlineStatus] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [forceUpdate, setForceUpdate] = useState(0);
+
+  // Efekt dla odbierania eventów nowych wiadomości - wymusza rerender listy
+  useEffect(() => {
+    const handleMessageReceived = () => {
+      // Wywołaj rerender tylko gdy przychodzi nowa wiadomość
+      setForceUpdate(prev => prev + 1);
+    };
+
+    window.addEventListener('chat:messageReceived', handleMessageReceived);
+    
+    return () => {
+      window.removeEventListener('chat:messageReceived', handleMessageReceived);
+    };
+  }, []);
 
   const toggleOnlineStatusVisibility = () => {
     setHideOnlineStatus(!hideOnlineStatus);
   };
 
   // Funkcja pomocnicza do pobierania ostatnich wiadomości z każdym użytkownikiem
-  const getLastMessageWithUser = (userId) => {
+  const getLastMessageWithUser = useCallback((userId) => {
     const userMessages = messages[userId] || [];
     return userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
-  };
+  }, [messages]);
+
+  // Funkcja sprawdzająca czy są nieprzeczytane wiadomości od użytkownika
+  const hasUnreadMessages = useCallback((userId) => {
+    const userMessages = messages[userId] || [];
+    return userMessages.some(msg => 
+      msg.senderId === userId && 
+      !msg.isRead && 
+      !msg.isDeleted
+    );
+  }, [messages]);
+
+  // Funkcja sprawdzająca ilość nieprzeczytanych wiadomości od użytkownika
+  const getUnreadCount = useCallback((userId) => {
+    const userMessages = messages[userId] || [];
+    return userMessages.filter(msg => 
+      msg.senderId === userId && 
+      !msg.isRead && 
+      !msg.isDeleted
+    ).length;
+  }, [messages]);
 
   // Funkcja formatująca czas wiadomości
   const formatTime = (timestamp) => {
@@ -34,25 +69,35 @@ const UserListSidebar = ({ onSelectUser }) => {
     }
   };
 
-  // Sortujemy użytkowników według czasu ostatniej wiadomości
+  // Sortujemy użytkowników według czasu ostatniej wiadomości - z useCallback
   const sortedUsers = useMemo(() => {
     if (!users || users.length === 0) return [];
     
-    // Czekamy aż wiadomości zostaną załadowane, aby poprawnie posortować
-    if (!lastMessagesLoaded && Object.keys(messages).length === 0) {
-      return [...users]; // Zwróć użytkowników w domyślnej kolejności, jeśli wiadomości jeszcze nie są gotowe
-    }
+    // Tworzymy kopię tablicy użytkowników do sortowania
+    const sortableUsers = [...users];
     
-    return [...users].sort((a, b) => {
+    // Sortujemy użytkowników według czasu ostatniej wiadomości
+    return sortableUsers.sort((a, b) => {
+      // Najpierw sprawdzamy nieprzeczytane wiadomości - te będą na górze
+      const hasUnreadA = hasUnreadMessages(a.id);
+      const hasUnreadB = hasUnreadMessages(b.id);
+      
+      // Jeśli jedno ma nieprzeczytane wiadomości a drugie nie, to priorytetyzujemy nieprzeczytane
+      if (hasUnreadA && !hasUnreadB) return -1;
+      if (!hasUnreadA && hasUnreadB) return 1;
+      
+      // Jeśli oba mają nieprzeczytane wiadomości lub oba nie mają, sortujemy wg czasu
       const lastMessageA = getLastMessageWithUser(a.id);
       const lastMessageB = getLastMessageWithUser(b.id);
       
+      // Używamy 0 jako domyślnego czasu, jeśli nie ma wiadomości
       const timeA = lastMessageA ? new Date(lastMessageA.createdAt).getTime() : 0;
       const timeB = lastMessageB ? new Date(lastMessageB.createdAt).getTime() : 0;
       
-      return timeB - timeA; // Sortuj malejąco (najnowsze na górze)
+      // Sortuj malejąco (najnowsze na górze)
+      return timeB - timeA;
     });
-  }, [users, messages, lastMessagesLoaded]);
+  }, [users, messages, getLastMessageWithUser, hasUnreadMessages, forceUpdate]); // Dodajemy forceUpdate jako zależność
 
   // Filtrowanie użytkowników na podstawie wyszukiwania
   const filteredUsers = useMemo(() => {
@@ -92,7 +137,9 @@ const UserListSidebar = ({ onSelectUser }) => {
     
     return (
       <div className="flex items-center justify-between w-full mt-1">
-        <div className="text-xs text-gray-500 truncate flex-1">
+        <div className={`text-xs truncate flex-1 ${
+          !isSentByMe && !lastMessage.isRead && !lastMessage.isDeleted ? 'text-black font-semibold' : 'text-gray-500'
+        }`}>
           <span className="font-medium">{isSentByMe ? "Ty: " : ""}</span>
           {shortContent}
         </div>
@@ -102,6 +149,11 @@ const UserListSidebar = ({ onSelectUser }) => {
       </div>
     );
   };
+
+  // Sprawdzanie statusu online użytkownika
+  const isUserOnline = useCallback((userId) => {
+    return onlineUsers.includes(userId);
+  }, [onlineUsers]);
 
   // Renderowanie stanu ładowania
   const renderLoadingState = () => {
@@ -166,26 +218,46 @@ const UserListSidebar = ({ onSelectUser }) => {
       
       <ul className="p-2 space-y-1 overflow-y-auto flex-1">
         {filteredUsers?.length > 0 ? (
-          filteredUsers.map((user) => (
-            <li
-              key={user.id}
-              onClick={() => onSelectUser(user)}
-              className="cursor-pointer p-3 rounded-lg hover:bg-gray-100 flex flex-col"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  {!hideOnlineStatus && (
-                    <div className={`w-2 h-2 rounded-full mr-2 ${
-                      onlineUsers.includes(user.id) ? 'bg-green-500' : 'bg-gray-400'
-                    }`} />
-                  )}
-                  <span>{user.firstName} {user.lastName}</span>
+          filteredUsers.map((chatUser) => {
+            const isOnline = isUserOnline(chatUser.id);
+            const unreadCount = getUnreadCount(chatUser.id);
+            const isSelected = selectedUser?.id === chatUser.id;
+            const hasUnread = hasUnreadMessages(chatUser.id);
+            
+            return (
+              <li
+                key={chatUser.id}
+                onClick={() => onSelectUser(chatUser)}
+                className={`cursor-pointer p-3 rounded-lg hover:bg-gray-100 flex flex-col ${
+                  isSelected ? 'bg-blue-50' : (hasUnread ? 'bg-indigo-50 border-l-4 border-indigo-500' : '')
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    {!hideOnlineStatus && (
+                      <div className={`relative w-2 h-2 rounded-full mr-2 ${
+                        isOnline ? 'bg-green-500' : 'bg-gray-400'
+                      }`}>
+                        {isOnline && (
+                          <span className="absolute -top-1 -left-1 w-4 h-4 bg-green-500 opacity-30 rounded-full animate-ping"></span>
+                        )}
+                      </div>
+                    )}
+                    <span className={hasUnread ? 'font-semibold' : ''}>{chatUser.firstName} {chatUser.lastName}</span>
+                    
+                    {/* Dodaj licznik nieprzeczytanych wiadomości */}
+                    {unreadCount > 0 && (
+                      <div className="ml-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </div>
+                    )}
+                  </div>
+                  {renderUserRoles(chatUser.roles)}
                 </div>
-                {renderUserRoles(user.roles)}
-              </div>
-              {renderLastMessage(user.id)}
-            </li>
-          ))
+                {renderLastMessage(chatUser.id)}
+              </li>
+            );
+          })
         ) : searchQuery ? (
           <li className="p-4 text-center text-gray-500">Brak wyników dla "{searchQuery}"</li>
         ) : (

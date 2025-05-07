@@ -1,5 +1,6 @@
 // 📁 src/components/inventory/TransactionFilters.jsx
 import React from 'react';
+import { getTransactionTypeGroups } from '../../utils/transactionUtils';
 
 export default function TransactionFilters({ filters, setFilters, users = [], categories = [] }) {
   const handleChange = (e) => {
@@ -9,6 +10,9 @@ export default function TransactionFilters({ filters, setFilters, users = [], ca
   const handleCheckbox = (e) => {
     setFilters((prev) => ({ ...prev, [e.target.name]: e.target.checked }));
   };
+
+  // Pobieramy grupy typów transakcji
+  const transactionTypeGroups = getTransactionTypeGroups();
 
   return (
     <div className="flex gap-4 flex-wrap mb-4">
@@ -54,10 +58,17 @@ export default function TransactionFilters({ filters, setFilters, users = [], ca
         className="border px-2 py-1 rounded"
       >
         <option value="">Wszystkie typy</option>
-        <option value="ADD">➕ Dodanie</option>
-        <option value="REMOVE">➖ Wydanie</option>
-        <option value="RESERVE">🔒 Rezerwacja</option>
-        <option value="RELEASE">🔓 Zwolnienie</option>
+        
+        {/* Dynamicznie generujemy opcje na podstawie funkcji pomocniczej */}
+        {Object.entries(transactionTypeGroups).map(([groupName, types]) => (
+          <optgroup key={groupName} label={groupName}>
+            {types.map(type => (
+              <option key={type.type} value={type.type}>
+                {type.fullText}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
       
       <input
