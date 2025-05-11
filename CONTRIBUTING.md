@@ -19,7 +19,7 @@ Production Manager to projekt portfolio, który demonstruje umiejętności w zak
    - Generowanie kodu z pomocą AI
    - Analiza i modyfikacja wygenerowanego kodu
    - Testowanie funkcjonalności
-   - Refaktoryzacja i optymalizacja
+   - Optymalizacja
 
 3. **Nauka i rozwój**
    - Zrozumienie nowych koncepcji

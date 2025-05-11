@@ -43,6 +43,7 @@ pnpm-debug.log*
 *.sw?
 .DS_Store
 .history/
+.history
 
 # Testing
 /coverage
@@ -50,6 +51,17 @@ pnpm-debug.log*
 
 # Production
 /build
+
+# Uploads
+backend/public/uploads/
+**/uploads/
+**/chat-attachments/
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.pdf
+**/*.doc
+**/*.docx
 
 # Misc
 .DS_Store
